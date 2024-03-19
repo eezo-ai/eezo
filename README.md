@@ -2,6 +2,12 @@
 
 The Eezo Client Library is a powerful, easy-to-use Python client for interacting with the Eezo API. Stay tuned for more features and improvements.
 
+## Documentation
+
+For the complete documentation of our project, please visit the following link:
+
+[Eezo Documentation](https://eezo-ai.notion.site/Eezo-Documentation-2a598d6ff7274b668ac27021a35df4ef?pvs=74)
+
 ## Configuration
 
 Before running the tests, you need to set up your environment with the necessary credentials.

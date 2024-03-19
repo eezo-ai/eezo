@@ -8,7 +8,7 @@ dotenv.load_dotenv()
 
 e = Eezo(logger=True)
 
-# Send a message to Chat UI
+# Send a message to the Chat UI
 m = e.new_message(
     eezo_id=os.environ["DEMO_EEZO_ID"],
     thread_id=os.environ["DEMO_THREAD_ID"],
