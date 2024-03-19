@@ -1,4 +1,4 @@
-from client import AsyncEezo
+from eezo import AsyncEezo
 
 import asyncio
 import dotenv

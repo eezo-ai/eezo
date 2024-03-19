@@ -1,4 +1,4 @@
-from client import Eezo
+from eezo import Eezo
 
 import dotenv
 import os

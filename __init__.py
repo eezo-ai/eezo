@@ -1,1 +1,1 @@
-from .client import AsyncEezo, Eezo
+from .eezo import AsyncEezo, Eezo
