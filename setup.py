@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="eezo",
     version="0.1.0",
-    description="Eezo offers a Dashboard that simplifies the management and monitoring of AI-driven agents connected through the Eezo API, using just a few lines of code. This Dashboard is designed to be user-friendly, making AI agents easily accessible to all team members, regardless of their technical expertise. Agents linked via this API can interact, share resources, and collaborate effectively. Additionally, the platform supports real-time data sharing through interactive charts, making it a comprehensive solution for developers and companies aiming to integrate their AI tools and processes into a single, efficient platform.",
-    author="Daniel Schönbohm",
+    description="Eezo's Dashboard streamlines the management of AI agents via its API, offering a user-friendly interface that requires minimal coding. It enables easy access for all team members, fostering agent interaction and collaboration. The platform also features real-time data sharing with interactive charts, making it an ideal solution for developers and companies looking to centralize their AI tools and processes.",
+    author="Daniel Schoenbohm",
     author_email="daniel@eezo.ai",
     packages=find_packages(),
     install_requires=[
