@@ -30,7 +30,7 @@ setup(
         "websocket-client==1.7.0",
     ],
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 3 - Alpha",  # Alpha status
         "Intended Audience :: Developers",
         "Natural Language :: English",
         "Operating System :: OS Independent",
