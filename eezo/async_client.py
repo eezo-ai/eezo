@@ -9,9 +9,12 @@ import aiohttp
 import sys
 import os
 
-CREATE_MESSAGE_ENDPOINT = "http://localhost:8082/v1/create-message"
-READ_MESSAGE_ENDPOINT = "http://localhost:8082/v1/read-message"
-DELETE_MESSAGE_ENDPOINT = "http://localhost:8082/v1/delete-message"
+SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
+SERVER = "http://localhost:8082"
+
+CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message"
+READ_MESSAGE_ENDPOINT = SERVER + "/v1/read-message"
+DELETE_MESSAGE_ENDPOINT = SERVER + "/v1/delete-message"
 
 
 class RestartHandler(FileSystemEventHandler):
@@ -54,7 +57,7 @@ class AsyncClient:
                 task.cancel()
             self.observer.stop()
 
-    async def new_message(self, eezo_id, thread_id):
+    async def new_message(self, eezo_id, thread_id, context="direct_message"):
         new_message = Message()
 
         async def notify():
@@ -65,6 +68,7 @@ class AsyncClient:
                 "eezo_id": eezo_id,
                 "message_id": nm["id"],
                 "interface": nm["interface"],
+                "context": context,
             }
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -110,6 +114,8 @@ class AsyncClient:
                 "eezo_id": old_message["eezo_id"],
                 "message_id": nm["id"],
                 "interface": nm["interface"],
+                # Find a way to get context from old_message_obj
+                "context": old_message["skill_id"],
             }
             async with aiohttp.ClientSession() as session:
                 async with session.post(

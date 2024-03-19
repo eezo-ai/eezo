@@ -9,10 +9,12 @@ import requests
 import sys
 import os
 
+SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
+SERVER = "http://localhost:8082"
 
-CREATE_MESSAGE_ENDPOINT = "http://localhost:8082/v1/create-message/"
-READ_MESSAGE_ENDPOINT = "http://localhost:8082/v1/read-message/"
-DELETE_MESSAGE_ENDPOINT = "http://localhost:8082/v1/delete-message/"
+CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message"
+READ_MESSAGE_ENDPOINT = SERVER + "/v1/read-message"
+DELETE_MESSAGE_ENDPOINT = SERVER + "/v1/delete-message"
 
 
 class RestartHandler(FileSystemEventHandler):
