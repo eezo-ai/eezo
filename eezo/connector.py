@@ -27,7 +27,7 @@ class JobCompleted:
 
 
 SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
-SERVER = "http://localhost:8082"
+# SERVER = "http://localhost:8082"
 
 API_VERSION = "/v1"
 REST_AUTH_URL = "/signin/"
