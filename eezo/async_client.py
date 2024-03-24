@@ -10,7 +10,8 @@ import sys
 import os
 
 SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
-SERVER = "http://localhost:8082"
+if os.environ.get("EEZO_DEV_MODE") == "True":
+    SERVER = "http://localhost:8082"
 
 CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message/"
 READ_MESSAGE_ENDPOINT = SERVER + "/v1/read-message/"
@@ -57,74 +58,73 @@ class AsyncClient:
                 task.cancel()
             self.observer.stop()
 
+    async def __request(self, method, endpoint, payload):
+        async with aiohttp.ClientSession() as session:
+            async with session.request(method, endpoint, json=payload) as response:
+                response_json = await response.json()
+                if response.status == 401:
+                    raise Exception(f"Unauthorized. Probably invalid api_key")
+                if response.status != 200:
+                    raise Exception(
+                        f"Error {response.status}: {response_json['detail']}"
+                    )
+                return response_json
+
     async def new_message(self, eezo_id, thread_id, context="direct_message"):
         new_message = Message()
 
         async def notify():
             nm = new_message.to_dict()
-            payload = {
-                "api_key": self.api_key,
-                "thread_id": thread_id,
-                "eezo_id": eezo_id,
-                "message_id": nm["id"],
-                "interface": nm["interface"],
-                "context": context,
-            }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    CREATE_MESSAGE_ENDPOINT, json=payload
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(
-                            f"Failed to send message. Status code: {response.status}"
-                        )
+            await self.__request(
+                "POST",
+                CREATE_MESSAGE_ENDPOINT,
+                {
+                    "api_key": self.api_key,
+                    "thread_id": thread_id,
+                    "eezo_id": eezo_id,
+                    "message_id": nm["id"],
+                    "interface": nm["interface"],
+                    "context": context,
+                },
+            )
 
         new_message.notify = notify
         return new_message
 
     async def delete_message(self, message_id):
-        payload = {"api_key": self.api_key, "message_id": message_id}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(DELETE_MESSAGE_ENDPOINT, json=payload) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to delete message. Status code: {response.status}"
-                    )
+        await self.__request(
+            "POST",
+            DELETE_MESSAGE_ENDPOINT,
+            {"api_key": self.api_key, "message_id": message_id},
+        )
 
     async def update_message(self, message_id):
-        payload = {"api_key": self.api_key, "message_id": message_id}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(READ_MESSAGE_ENDPOINT, json=payload) as response:
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to fetch old message. Status code: {response.status}"
-                    )
-                response_json = await response.json()
-                if "message" not in response_json:
-                    raise Exception("Message not found")
+        response_json = await self.__request(
+            "POST",
+            READ_MESSAGE_ENDPOINT,
+            {"api_key": self.api_key, "message_id": message_id},
+        )
+        if "data" not in response_json:
+            raise Exception(f"Message not found for id {message_id}")
 
         old_message = response_json["data"]
         new_message = Message()  # Assuming Message is refactored for async
 
         async def notify():
             nm = new_message.to_dict()
-            payload = {
-                "api_key": self.api_key,
-                "thread_id": old_message["thread_id"],
-                "eezo_id": old_message["eezo_id"],
-                "message_id": nm["id"],
-                "interface": nm["interface"],
-                # Find a way to get context from old_message_obj
-                "context": old_message["skill_id"],
-            }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    CREATE_MESSAGE_ENDPOINT, json=payload
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(
-                            f"Failed to send updated message. Status code: {response.status}"
-                        )
+            await self.__request(
+                "POST",
+                CREATE_MESSAGE_ENDPOINT,
+                {
+                    "api_key": self.api_key,
+                    "thread_id": old_message["thread_id"],
+                    "eezo_id": old_message["eezo_id"],
+                    "message_id": nm["id"],
+                    "interface": nm["interface"],
+                    # Find a way to get context from old_message_obj
+                    "context": old_message["skill_id"],
+                },
+            )
 
         new_message.notify = notify
         new_message.id = old_message["id"]

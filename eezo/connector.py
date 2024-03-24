@@ -6,6 +6,14 @@ import socketio
 import aiohttp
 import requests
 import time
+import os
+
+SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
+if os.environ.get("EEZO_DEV_MODE") == "True":
+    SERVER = "http://localhost:8082"
+
+API_VERSION = "/v1"
+REST_AUTH_URL = "/signin/"
 
 
 class JobCompleted:
@@ -26,13 +34,6 @@ class JobCompleted:
         }
 
 
-SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
-# SERVER = "http://localhost:8082"
-
-API_VERSION = "/v1"
-REST_AUTH_URL = "/signin/"
-
-
 class AsyncConnector:
     def __init__(self, api_key, connector_id, connector_function, logger=False):
         self.api_key = api_key
@@ -40,6 +41,7 @@ class AsyncConnector:
         self.func = connector_function
         self.connector_id = connector_id
         self.job_responses = {}
+        self.run_loop = True
 
         self.sio = socketio.AsyncClient(
             reconnection_attempts=0,
@@ -119,24 +121,35 @@ class AsyncConnector:
             "disconnect",
             lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
         )
+
+        def auth_error(message: str):
+            self.__log(f" ✖ Authentication failed: {message}")
+            self.run_loop = False
+
         self.sio.on("job_request", lambda p: asyncio.create_task(self.__execute_job(p)))
         self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
+        self.sio.on("token_expired", lambda: self.__authenticate())
+        self.sio.on("auth_error", auth_error)
 
-        try:
-            while True:
-                try:
-                    await self.sio.connect(SERVER)
-                    await self.sio.wait()
-                except socketio.exceptions.ConnectionError as e:
-                    self.__log(
-                        f" ✖ Connector {self.connector_id} failed to connect: {e}"
-                    )
-                    await asyncio.sleep(5)  # Wait before retrying to connect
-                except KeyboardInterrupt:
-                    await self.sio.disconnect()
+        while self.run_loop:
+            try:
+                await self.sio.connect(SERVER)
+                await self.sio.wait()
+            except socketio.exceptions.ConnectionError as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect"
+                        )
+                        self.__log("   Retrying to connect...")
+                    await asyncio.sleep(5)
+                else:
                     break
-        except KeyboardInterrupt:
-            await self.sio.disconnect()
+            except KeyboardInterrupt:
+                self.run_loop = False
+                break
+
+        await self.sio.disconnect()
 
 
 class Connector:
@@ -146,6 +159,7 @@ class Connector:
         self.func = connector_function
         self.connector_id = connector_id
         self.job_responses = {}
+        self.run_loop = True
 
         self.sio = socketio.Client(
             reconnection_attempts=0,
@@ -225,25 +239,34 @@ class Connector:
 
         self.sio.on(
             "disconnect",
-            lambda: (self.__log(f" ✖ Connector {self.connector_id} disconnected")),
+            lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
         )
+
+        def auth_error(message: str):
+            self.__log(f" ✖ Authentication failed: {message}")
+            self.run_loop = False
+
         self.sio.on("job_request", lambda p: self.__execute_job(p))
         self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
         self.sio.on("token_expired", lambda: self.__authenticate())
+        self.sio.on("auth_error", auth_error)
 
-        try:
-            while True:
-                try:
-                    self.sio.connect(SERVER)
-                    self.sio.wait()
-                except socketio.exceptions.ConnectionError as e:
+        while self.run_loop:
+            try:
+                self.sio.connect(SERVER)
+                self.sio.wait()
+            except socketio.exceptions.ConnectionError as e:
+                if self.run_loop:
                     if self.logger:
                         self.__log(
                             f" ✖ Connector {self.connector_id} failed to connect"
                         )
-                        self.__log(f"   Retrying to connect...")
+                        self.__log("   Retrying to connect...")
                     time.sleep(5)
-                except KeyboardInterrupt:
-                    self.sio.disconnect()
-        except KeyboardInterrupt:
-            self.sio.disconnect()
+                else:
+                    break
+            except KeyboardInterrupt:
+                self.run_loop = False
+                break
+
+        self.sio.disconnect()

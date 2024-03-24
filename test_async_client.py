@@ -1,11 +1,12 @@
-from eezo import AsyncEezo
-
 import asyncio
 import dotenv
 import time
 import os
 
 dotenv.load_dotenv()
+
+from eezo import AsyncEezo
+
 
 e = AsyncEezo(logger=True)
 

@@ -10,7 +10,8 @@ import sys
 import os
 
 SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
-# SERVER = "http://localhost:8082"
+if os.environ.get("EEZO_DEV_MODE") == "True":
+    SERVER = "http://localhost:8082"
 
 CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message/"
 READ_MESSAGE_ENDPOINT = SERVER + "/v1/read-message/"
@@ -59,50 +60,56 @@ class Client:
             self.executor.shutdown(wait=False)
             self.observer.stop()
 
+    def __request(self, method, endpoint, payload):
+        response = requests.request(method, endpoint, json=payload)
+        if response.status_code == 401:
+            raise Exception(f"Unauthorized. Probably invalid api_key")
+        if response.status_code != 200:
+            raise Exception(
+                f"Error {response.status_code}: {response.json()['detail']}"
+            )
+        return response
+
     def new_message(self, eezo_id, thread_id, context="direct_message"):
         new_message = None
 
         def notify():
             messgage_obj = new_message.to_dict()
-            payload = {
-                "api_key": self.api_key,
-                "thread_id": thread_id,
-                "eezo_id": eezo_id,
-                "message_id": messgage_obj["id"],
-                "interface": messgage_obj["interface"],
-                "context": context,
-            }
-            response = requests.post(CREATE_MESSAGE_ENDPOINT, json=payload)
-            if response.status_code != 200:
-                raise Exception(
-                    f"Failed to send message to {CREATE_MESSAGE_ENDPOINT}. Status code: {response.status_code}"
-                )
+            self.__request(
+                "POST",
+                CREATE_MESSAGE_ENDPOINT,
+                {
+                    "api_key": self.api_key,
+                    "thread_id": thread_id,
+                    "eezo_id": eezo_id,
+                    "message_id": messgage_obj["id"],
+                    "interface": messgage_obj["interface"],
+                    "context": context,
+                },
+            )
 
         new_message = Message(notify=notify)
         return new_message
 
     def delete_message(self, message_id):
-        payload = {
-            "api_key": self.api_key,
-            "message_id": message_id,
-        }
-        response = requests.post(DELETE_MESSAGE_ENDPOINT, json=payload)
-        if response.status_code != 200:
-            raise Exception(
-                f"Failed to delete message {DELETE_MESSAGE_ENDPOINT}: {response.status_code}"
-            )
+        self.__request(
+            "POST",
+            DELETE_MESSAGE_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "message_id": message_id,
+            },
+        )
 
     def update_message(self, message_id):
-        payload = {
-            "api_key": self.api_key,
-            "message_id": message_id,
-        }
-
-        response = requests.post(READ_MESSAGE_ENDPOINT, json=payload)
-        if response.status_code != 200:
-            raise Exception(
-                f"Failed to fetch message {message_id}: {response.status_code} {response.text}"
-            )
+        response = self.__request(
+            "POST",
+            READ_MESSAGE_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "message_id": message_id,
+            },
+        )
 
         if "data" not in response.json():
             raise Exception(f"Message not found for id {message_id}")
@@ -112,20 +119,19 @@ class Client:
 
         def notify():
             messgage_obj = new_message.to_dict()
-            payload = {
-                "api_key": self.api_key,
-                "thread_id": old_message_obj["thread_id"],
-                "eezo_id": old_message_obj["eezo_id"],
-                "message_id": messgage_obj["id"],
-                "interface": messgage_obj["interface"],
-                # Find a way to get context from old_message_obj
-                "context": old_message_obj["skill_id"],
-            }
-            response = requests.post(CREATE_MESSAGE_ENDPOINT, json=payload)
-            if response.status_code != 200:
-                raise Exception(
-                    f"Failed to send message to {CREATE_MESSAGE_ENDPOINT}. Status code: {response.status_code}"
-                )
+            self.__request(
+                "POST",
+                CREATE_MESSAGE_ENDPOINT,
+                {
+                    "api_key": self.api_key,
+                    "thread_id": old_message_obj["thread_id"],
+                    "eezo_id": old_message_obj["eezo_id"],
+                    "message_id": messgage_obj["id"],
+                    "interface": messgage_obj["interface"],
+                    # Find a way to get context from old_message_obj
+                    "context": old_message_obj["skill_id"],
+                },
+            )
 
         new_message = Message(notify=notify)
         new_message.id = old_message_obj["id"]
