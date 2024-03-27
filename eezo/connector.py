@@ -8,7 +8,7 @@ import requests
 import time
 import os
 
-SERVER = "https://client-server-itl7dmcv5q-uc.a.run.app"
+SERVER = "https://api-service-bofkvbi4va-ey.a.run.app"
 if os.environ.get("EEZO_DEV_MODE") == "True":
     SERVER = "http://localhost:8082"
 
