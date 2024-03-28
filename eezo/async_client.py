@@ -11,6 +11,7 @@ import os
 
 SERVER = "https://api-service-bofkvbi4va-ey.a.run.app"
 if os.environ.get("EEZO_DEV_MODE") == "True":
+    print("Running in dev mode")
     SERVER = "http://localhost:8082"
 
 CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message/"
