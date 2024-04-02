@@ -148,6 +148,16 @@ class AsyncConnector:
             except KeyboardInterrupt:
                 self.run_loop = False
                 break
+            except Exception as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                        )
+                        self.__log("   Retrying to connect...")
+                    await asyncio.sleep(5)
+                else:
+                    break
 
         await self.sio.disconnect()
 
@@ -268,5 +278,15 @@ class Connector:
             except KeyboardInterrupt:
                 self.run_loop = False
                 break
+            except Exception as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                        )
+                        self.__log("   Retrying to connect...")
+                    time.sleep(5)
+                else:
+                    break
 
         self.sio.disconnect()
