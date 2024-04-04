@@ -1,6 +1,7 @@
 from .interface import Interface, AsyncInterface
 
 import traceback
+import logging
 import asyncio
 import socketio
 import aiohttp
@@ -43,6 +44,13 @@ class AsyncConnector:
         self.job_responses = {}
         self.run_loop = True
 
+        if logger:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+
         self.sio = socketio.AsyncClient(
             reconnection_attempts=0,
             reconnection_delay_max=10,
@@ -65,7 +73,7 @@ class AsyncConnector:
 
     def __log(self, message):
         if self.logger:
-            print(message)
+            logging.info(message)
 
     async def __authenticate(self):
         async with aiohttp.ClientSession() as session:
@@ -171,6 +179,13 @@ class Connector:
         self.job_responses = {}
         self.run_loop = True
 
+        if logger:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+
         self.sio = socketio.Client(
             reconnection_attempts=0,
             reconnection_delay_max=10,
@@ -193,7 +208,7 @@ class Connector:
 
     def __log(self, message):
         if self.logger:
-            print(message)
+            logging.info(message)
 
     def __authenticate(self):
         url = f"{SERVER}{API_VERSION}{REST_AUTH_URL}"

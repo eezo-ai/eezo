@@ -4,3 +4,4 @@ build
 dist
 eezo.egg-info
 __pycache__
+*.pyc

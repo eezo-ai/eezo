@@ -9,27 +9,27 @@ from eezo import Eezo
 
 e = Eezo(logger=True)
 
-# Send a message to the Chat UI
-m = e.new_message(
-    eezo_id=os.environ["DEMO_EEZO_ID"],
-    thread_id=os.environ["DEMO_THREAD_ID"],
-    context="test",
-)
+# # Send a message to the Chat UI
+# m = e.new_message(
+#     eezo_id=os.environ["DEMO_EEZO_ID"],
+#     thread_id=os.environ["DEMO_THREAD_ID"],
+#     context="test",
+# )
 
-m.add("text", text="Hello, world!")
-m.notify()
+# m.add("text", text="Hello, world!")
+# m.notify()
 
-time.sleep(3)
+# time.sleep(3)
 
-# Update the message in Chat UI
-m = e.update_message(m.id)
-m.add("text", text="Hello, world! Updated!")
-m.notify()
+# # Update the message in Chat UI
+# m = e.update_message(m.id)
+# m.add("text", text="Hello, world! Updated!")
+# m.notify()
 
-time.sleep(3)
+# time.sleep(3)
 
-# Delete the message from Chat UI
-e.delete_message(m.id)
+# # Delete the message from Chat UI
+# e.delete_message(m.id)
 
 
 @e.on(os.environ["DEMO_AGENT_ID"])
