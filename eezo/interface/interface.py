@@ -46,7 +46,9 @@ class AsyncInterface:
         return await self.get_result(job_id)
 
     async def get_thread(self, nr=5, to_string=False):
-        await self._run(skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string)
+        return await self._run(
+            skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string
+        )
 
     async def invoke(self, agent_id, **kwargs):
         return await self._run(skill_id=agent_id, **kwargs)
@@ -98,7 +100,9 @@ class Interface:
         return self.get_result(job_id)
 
     def get_thread(self, nr=5, to_string=False):
-        self._run(skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string)
+        return self._run(
+            skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string
+        )
 
     def invoke(self, agent_id, **kwargs):
         return self._run(skill_id=agent_id, **kwargs)

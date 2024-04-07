@@ -222,7 +222,7 @@ class Connector:
         while True:
             if job_id in self.job_responses:
                 response = self.job_responses.pop(job_id)
-                self.__log(f"<< Sub Job {job_id} completed")
+                self.__log(f"<< Sub Job {job_id} completed.")
 
                 if not response.get("success", True):
                     self.__log(
@@ -271,8 +271,11 @@ class Connector:
             self.__log(f" ✖ Authentication failed: {message}")
             self.run_loop = False
 
+        def job_response(response):
+            self.job_responses[response["id"]] = response
+
         self.sio.on("job_request", lambda p: self.__execute_job(p))
-        self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
+        self.sio.on("job_response", job_response)
         self.sio.on("token_expired", lambda: self.__authenticate())
         self.sio.on("auth_error", auth_error)
 

@@ -1,5 +1,6 @@
 import asyncio
 import dotenv
+import json
 import time
 import os
 
@@ -12,7 +13,6 @@ e = AsyncEezo(logger=True)
 
 
 async def sent_directly():
-    # Send a message to Chat UI
     m = await e.new_message(
         eezo_id=os.environ["DEMO_EEZO_ID"],
         thread_id=os.environ["DEMO_THREAD_ID"],
@@ -24,23 +24,22 @@ async def sent_directly():
 
     time.sleep(3)
 
-    # Update the message in Chat UI
     m = await e.update_message(m.id)
     m.add("text", text="Hello, world! Updated!")
     await m.notify()
 
     time.sleep(3)
 
-    # Delete the message from Chat UI
     await e.delete_message(m.id)
 
 
 asyncio.run(sent_directly())
 
 
-@e.on(os.environ["DEMO_AGENT_ID"])
-async def chart_demo(server, **kwargs):
-    m = server.new_message()
+@e.on(os.environ["DEMO_AGENT_ID_1"])
+async def chart_demo(c, **kwargs):
+    m = c.new_message()
+    m.add("text", text="Hello, world 1")
     m.add(
         "chart",
         chart_type="candlestick",
@@ -51,11 +50,14 @@ async def chart_demo(server, **kwargs):
     )
     await m.notify()
 
-    # result = server.get_thread()
 
-    # formatted_json = json.dumps(result, indent=4)
-    # m.add("text", text=f"```{formatted_json}```")
-    # await m.notify()
+@e.on(os.environ["DEMO_AGENT_ID_2"])
+async def chart_demo(c, **kwargs):
+    m = c.new_message()
+    m.add("text", text="Hello, world 2")
+    thread_str = await c.get_thread(to_string=True)
+    m.add("text", text=f"```{thread_str}```")
+    await m.notify()
 
 
 asyncio.run(e.connect())

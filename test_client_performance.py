@@ -45,7 +45,7 @@ def send_messages(i: int):
 async def connect_client():
     e = AsyncEezo(logger=True)
 
-    @e.on(os.environ["DEMO_AGENT_ID"])
+    @e.on(os.environ["DEMO_AGENT_ID_1"])
     async def chart_demo(server, **kwargs):
         m = server.new_message()
         m.add(

@@ -9,32 +9,30 @@ from eezo import Eezo
 
 e = Eezo(logger=True)
 
-# # Send a message to the Chat UI
-# m = e.new_message(
-#     eezo_id=os.environ["DEMO_EEZO_ID"],
-#     thread_id=os.environ["DEMO_THREAD_ID"],
-#     context="test",
-# )
+m = e.new_message(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id=os.environ["DEMO_THREAD_ID"],
+    context="test",
+)
 
-# m.add("text", text="Hello, world!")
-# m.notify()
+m.add("text", text="Hello, world!")
+m.notify()
 
-# time.sleep(3)
+time.sleep(3)
 
-# # Update the message in Chat UI
-# m = e.update_message(m.id)
-# m.add("text", text="Hello, world! Updated!")
-# m.notify()
+m = e.update_message(m.id)
+m.add("text", text="Hello, world! Updated!")
+m.notify()
 
-# time.sleep(3)
+time.sleep(3)
 
-# # Delete the message from Chat UI
-# e.delete_message(m.id)
+e.delete_message(m.id)
 
 
-@e.on(os.environ["DEMO_AGENT_ID"])
-def chart_demo(server, **kwargs):
-    m = server.new_message()
+@e.on(os.environ["DEMO_AGENT_ID_1"])
+def chart_demo(c, **kwargs):
+    m = c.new_message()
+    m.add("text", text="Hello, world 1")
     m.add(
         "chart",
         chart_type="candlestick",
@@ -45,11 +43,14 @@ def chart_demo(server, **kwargs):
     )
     m.notify()
 
-    # result = server.get_thread()
 
-    # formatted_json = json.dumps(result, indent=4)
-    # m.add("text", text=f"```{formatted_json}```")
-    # m.notify()
+@e.on(os.environ["DEMO_AGENT_ID_2"])
+def chart_demo(c, **kwargs):
+    m = c.new_message()
+    m.add("text", text="Hello, world 2")
+    thread_str = c.get_thread(to_string=True)
+    m.add("text", text=f"```{thread_str}```")
+    m.notify()
 
 
 e.connect()
