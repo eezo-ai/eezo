@@ -99,8 +99,14 @@ class AsyncConnector:
         return response["result"]
 
     async def __execute_job(self, job_obj):
-        job_id, payload = job_obj["job_id"], job_obj["job_payload"]
-        self.__log(f"<< Job {job_id} received with payload: {payload}")
+        job_id, connector_id, payload = (
+            job_obj["job_id"],
+            job_obj["connector_id"],
+            job_obj["job_payload"],
+        )
+        self.__log(
+            f"<< Job for connector {connector_id} received with payload: {payload}"
+        )
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i = AsyncInterface(
@@ -112,7 +118,7 @@ class AsyncConnector:
             result = await self.func(i, **payload)
             await self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            self.__log(f" ✖ Job {job_id} failed:\n{traceback.format_exc()}")
+            self.__log(f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
                 success=False,
@@ -235,8 +241,14 @@ class Connector:
                 time.sleep(0.1)
 
     def __execute_job(self, job_obj):
-        job_id, payload = job_obj["job_id"], job_obj["job_payload"]
-        self.__log(f"<< Job {job_id} received with payload: {payload}")
+        job_id, connector_id, payload = (
+            job_obj["job_id"],
+            job_obj["connector_id"],
+            job_obj["job_payload"],
+        )
+        self.__log(
+            f"<< Job for connector {connector_id} received with payload: {payload}"
+        )
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i = Interface(
@@ -249,7 +261,7 @@ class Connector:
             result = self.func(i, **payload)
             self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            self.__log(f" ✖ Job {job_id} failed:\n{traceback.format_exc()}")
+            self.__log(f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
                 success=False,
