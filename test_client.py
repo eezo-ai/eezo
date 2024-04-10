@@ -52,5 +52,17 @@ def chart_demo(c, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     m.notify()
 
+    c.load_state()
+
+    print(c.state)
+    print(c.state["test"])
+    print(c.state.get("test"))
+
+    c.state["test"] = c.state.get("test", 0) + 1
+    m.add("text", text=f"State: {c.state['test']}")
+    m.notify()
+
+    c.save_state()
+
 
 e.connect()

@@ -42,6 +42,7 @@ class AsyncConnector:
         self.func = connector_function
         self.connector_id = connector_id
         self.job_responses = {}
+        self.user_id = None
         self.run_loop = True
 
         if logger:
@@ -82,6 +83,7 @@ class AsyncConnector:
                 if response.status == 200:
                     resp_json = await response.json()
                     self.auth_token = resp_json.get("token")
+                    self.user_id = resp_json.get("user_id")
                 else:
                     resp_json = await response.json()
                     raise Exception(f"{response.status}: {resp_json['detail']}")
@@ -111,6 +113,8 @@ class AsyncConnector:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i = AsyncInterface(
                 job_id=job_id,
+                user_id=self.user_id,
+                api_key=self.api_key,
                 cb_send_message=lambda p: self.sio.emit("direct_message", p),
                 cb_invoke_connector=lambda p: self.sio.emit("invoke_skill", p),
                 cb_get_result=self.__get_job_result,
@@ -183,6 +187,7 @@ class Connector:
         self.func = connector_function
         self.connector_id = connector_id
         self.job_responses = {}
+        self.user_id = None
         self.run_loop = True
 
         if logger:
@@ -221,6 +226,7 @@ class Connector:
         response = requests.post(url, json={"api_key": self.api_key})
         if response.status_code == 200:
             self.auth_token = response.json().get("token")
+            self.user_id = response.json().get("user_id")
         else:
             raise Exception(f"{response.status_code}: {response.json()['detail']}")
 
@@ -253,6 +259,8 @@ class Connector:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i = Interface(
                 job_id=job_id,
+                user_id=self.user_id,
+                api_key=self.api_key,
                 cb_send_message=lambda p: self.sio.emit("direct_message", p),
                 cb_invoke_connector=lambda p: self.sio.emit("invoke_skill", p),
                 cb_get_result=self.__get_job_result,

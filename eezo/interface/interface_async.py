@@ -1,8 +1,6 @@
-from requests.packages.urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
 from .message import Message
 
-import requests
+import httpx
 import logging
 import uuid
 import os
@@ -23,9 +21,9 @@ class StateProxy:
         self.interface = interface
         self._state = {}
 
-    def load(self):
+    async def load(self):
         logging.info("<< Loading state")
-        result = self.interface.read_state(self.interface.user_id)
+        result = await self.interface.read_state(self.interface.user_id)
         if result is not None:
             self.interface.state_was_loaded = True
             self._state = result
@@ -64,10 +62,10 @@ class StateProxy:
     def get(self, key, default=None):
         return self._state.get(key, default)
 
-    def save(self):
+    async def save(self):
         logging.info(">> Saving state")
         if self._state and self.interface.state_was_loaded:
-            self.interface.update_state(self.interface.user_id, self._state)
+            await self.interface.update_state(self.interface.user_id, self._state)
 
         if not self.interface.state_was_loaded:
             # Check if logging warning is enabled otherwise display infor
@@ -77,7 +75,7 @@ class StateProxy:
                 logging.info("State was not loaded, skipping save")
 
 
-class Interface:
+class AsyncInterface:
     def __init__(
         self,
         job_id: str,
@@ -95,86 +93,86 @@ class Interface:
         self.invoke_connector = cb_invoke_connector
         self.get_result = cb_get_result
         self._state_proxy = StateProxy(self)
+        self.client = httpx.AsyncClient()
         self.state_was_loaded = False
-
-        self.session = requests.Session()
-        retries = Retry(
-            total=5,
-            backoff_factor=1,
-            status_forcelist=[502, 503, 504],
-        )
-        self.session.mount("http://", HTTPAdapter(max_retries=retries))
-        self.session.mount("https://", HTTPAdapter(max_retries=retries))
 
     def new_message(self):
         self.message = Message(notify=self.notify)
         return self.message
 
-    def notify(self):
+    async def notify(self):
         if self.message is None:
             raise Exception("Please create a message first")
-
         message_obj = self.message.to_dict()
-        self.send_message(
+        await self.send_message(
             {
                 "message_id": message_obj["id"],
                 "interface": message_obj["interface"],
             }
         )
 
-    def _run(self, skill_id, **kwargs):
-        """Invoke a skill and get the result."""
+    async def _run(self, skill_id, **kwargs):
         if not skill_id:
             raise ValueError("skill_id is required")
 
         job_id = str(uuid.uuid4())
-        self.invoke_connector(
+        await self.invoke_connector(
             {
                 "new_job_id": job_id,
                 "skill_id": skill_id,
                 "skill_payload": kwargs,
             }
         )
-        return self.get_result(job_id)
+        return await self.get_result(job_id)
 
-    def get_thread(self, nr=5, to_string=False):
-        return self._run(
+    async def get_thread(self, nr=5, to_string=False):
+        return await self._run(
             skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string
         )
 
-    def invoke(self, agent_id, **kwargs):
-        return self._run(skill_id=agent_id, **kwargs)
+    async def invoke(self, agent_id, **kwargs):
+        return await self._run(skill_id=agent_id, **kwargs)
 
-    def __request(self, method, endpoint, payload):
+    async def __request(self, method, endpoint, payload):
         try:
+            # Ensure the API key is included in the payload.
             payload["api_key"] = self.api_key
-            response = self.session.request(method, endpoint, json=payload)
-            # Raises HTTPError for bad responses
+
+            # Asynchronously send the request.
+            response = await self.client.request(method, endpoint, json=payload)
+
+            # Raises an HTTPError for bad responses.
             response.raise_for_status()
+
+            # Parse the JSON response asynchronously.
             result = response.json()
+
+            # Return the relevant part of the response data.
             return result.get("data", {}).get("state", {})
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code in [401, 403]:
-                raise Exception("Authorization error. Check your API key.")
+                raise Exception("Authorization error. Check your API key.") from e
             elif e.response.status_code == 404:
+                # For a not found error, attempt to create the state and return its default.
                 if endpoint == READ_STATE_ENDPOINT or endpoint == UPDATE_STATE_ENDPOINT:
-                    result = self.create_state(self.user_id, {})
+                    result = await self.create_state(self.user_id, {})
                     return result.get("data", {}).get("state", {})
                 else:
-                    raise Exception("State not found.")
+                    raise Exception("State not found.") from e
             else:
-                raise Exception(f"Unexpected error: {e.response.content}")
+                # For any other error, re-raise with the received error content.
+                raise Exception(f"Unexpected error: {e.response.content}") from e
 
-    def create_state(self, state_id, state={}):
-        return self.__request(
+    async def create_state(self, state_id, state={}):
+        return await self.__request(
             "POST", CREATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
         )
 
-    def read_state(self, state_id):
-        return self.__request("POST", READ_STATE_ENDPOINT, {"state_id": state_id})
+    async def read_state(self, state_id):
+        return await self.__request("POST", READ_STATE_ENDPOINT, {"state_id": state_id})
 
-    def update_state(self, state_id, state):
-        return self.__request(
+    async def update_state(self, state_id, state):
+        return await self.__request(
             "POST", UPDATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
         )
 
@@ -182,8 +180,8 @@ class Interface:
     def state(self):
         return self._state_proxy
 
-    def load_state(self):
-        self._state_proxy.load()
+    async def load_state(self):
+        await self._state_proxy.load()
 
-    def save_state(self):
-        self._state_proxy.save()
+    async def save_state(self):
+        await self._state_proxy.save()
