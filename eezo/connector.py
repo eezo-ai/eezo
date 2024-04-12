@@ -132,60 +132,55 @@ class AsyncConnector:
             )
             await self.sio.emit("job_completed", job_completed.to_dict())
 
-    async def __handle_disconnect(self):
-        self.__log(f" ✖ Connector {self.connector_id} disconnected")
-        # Additional logic to determine if reconnect should be attempted
-        # For example, check if it was an expected disconnection or if a maximum number of retries has been reached
-        await self.__attempt_connect()
-
     async def connect(self):
         await self.__authenticate()
 
-        self.sio.on("disconnect", self.__handle_disconnect)
+        self.sio.on(
+            "disconnect",
+            lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
+        )
 
         def auth_error(message: str):
             self.__log(f" ✖ Authentication failed: {message}")
             self.run_loop = False
 
-        async def job_response(response):
-            self.job_responses[response["id"]] = response
-
-        async def on_job_request(p):
-            await self.__execute_job(p)
-
         async def on_token_expired():
             await self.__authenticate()
 
-        self.sio.on("job_request", on_job_request)
-        self.sio.on("job_response", job_response)
+        self.sio.on("job_request", lambda p: asyncio.create_task(self.__execute_job(p)))
+        self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
         self.sio.on("token_expired", on_token_expired)
         self.sio.on("auth_error", auth_error)
 
-        await self.__attempt_connect()
-
-    async def __attempt_connect(self, retry_delay=5, max_retries=10):
-        retries = 0
-        while self.run_loop and retries < max_retries:
+        while self.run_loop:
             try:
                 await self.sio.connect(SERVER)
                 await self.sio.wait()
-                break  # Exit loop if connect is successful
-            except (socketio.exceptions.ConnectionError, Exception) as e:
-                self.__log(
-                    f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
-                )
-                await asyncio.sleep(retry_delay)
-                retries += 1
-                if retries >= max_retries:
-                    self.__log("Reached maximum retries, stopping.")
-                    self.run_loop = False
+            except socketio.exceptions.ConnectionError as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect"
+                        )
+                        self.__log("   Retrying to connect...")
+                    await asyncio.sleep(5)
+                else:
+                    break
             except KeyboardInterrupt:
-                self.__log("Manual interrupt, stopping.")
                 self.run_loop = False
                 break
+            except Exception as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                        )
+                        self.__log("   Retrying to connect...")
+                    await asyncio.sleep(5)
+                else:
+                    break
 
-        if not self.run_loop:
-            await self.sio.disconnect()
+        await self.sio.disconnect()
 
 
 class Connector:
@@ -287,16 +282,13 @@ class Connector:
             )
             self.sio.emit("job_completed", job_completed.to_dict())
 
-    def __handle_disconnect(self):
-        self.__log(f" ✖ Connector {self.connector_id} disconnected")
-        # Additional logic to determine if reconnect should be attempted
-        # For example, check if it was an expected disconnection or if a maximum number of retries has been reached
-        self.__attempt_connect()
-
     def connect(self):
         self.__authenticate()
 
-        self.sio.on("disconnect", self.__handle_disconnect)
+        self.sio.on(
+            "disconnect",
+            lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
+        )
 
         def auth_error(message: str):
             self.__log(f" ✖ Authentication failed: {message}")
@@ -310,28 +302,32 @@ class Connector:
         self.sio.on("token_expired", lambda: self.__authenticate())
         self.sio.on("auth_error", auth_error)
 
-        self.__attempt_connect()
-
-    def __attempt_connect(self, retry_delay=5, max_retries=10):
-        retries = 0
-        while self.run_loop and retries < max_retries:
+        while self.run_loop:
             try:
                 self.sio.connect(SERVER)
                 self.sio.wait()
-                break  # Exit loop if connect is successful
-            except (socketio.exceptions.ConnectionError, Exception) as e:
-                self.__log(
-                    f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
-                )
-                time.sleep(retry_delay)
-                retries += 1
-                if retries >= max_retries:
-                    self.__log("Reached maximum retries, stopping.")
-                    self.run_loop = False
+            except socketio.exceptions.ConnectionError as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect"
+                        )
+                        self.__log("   Retrying to connect...")
+                    time.sleep(5)
+                else:
+                    break
             except KeyboardInterrupt:
-                self.__log("Manual interrupt, stopping.")
                 self.run_loop = False
                 break
+            except Exception as e:
+                if self.run_loop:
+                    if self.logger:
+                        self.__log(
+                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                        )
+                        self.__log("   Retrying to connect...")
+                    time.sleep(5)
+                else:
+                    break
 
-        if not self.run_loop:
-            self.sio.disconnect()
+        self.sio.disconnect()
