@@ -11,6 +11,10 @@ from eezo import Eezo
 from eezo import AsyncEezo
 
 
+def get_human_readable_time():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+
+
 # Direct message test ---------------------------------------------------------
 
 
@@ -23,14 +27,17 @@ def send_messages(i: int):
         context="test " + str(i),
     )
 
-    m.add("text", text="Hello, world " + str(i) + "!")
+    m.add("text", text="Hello, world " + str(i) + "! " + get_human_readable_time())
     m.notify()
 
     time.sleep(3)
 
     # Update the message in Chat UI
     m = e.update_message(m.id)
-    m.add("text", text="Hello, world! Updated " + str(i) + "!")
+    m.add(
+        "text",
+        text="Hello, world! Updated " + str(i) + "! " + get_human_readable_time(),
+    )
     m.notify()
 
     time.sleep(3)
@@ -45,17 +52,10 @@ def send_messages(i: int):
 async def connect_client():
     e = AsyncEezo(logger=True)
 
-    @e.on(os.environ["DEMO_AGENT_ID_1"])
+    @e.on(os.environ["DEMO_AGENT_ID_2"])
     async def chart_demo(server, **kwargs):
         m = server.new_message()
-        m.add(
-            "chart",
-            chart_type="candlestick",
-            data=[[10, 15, 5, 12], [11, 13, 9, 8], [12, 12, 10, 11]],
-            xaxis=["a", "b", "c"],
-            name="Example chart",
-            chart_title="Example chart",
-        )
+        m.add("text", text=f"Hello, at {get_human_readable_time()}")
         await m.notify()
 
     await e.connect()
@@ -72,4 +72,4 @@ if __name__ == "__main__":
     #     for i in range(10):
     #         executor.submit(send_messages, i)
 
-    asyncio.run(stress_test(100))
+    asyncio.run(stress_test(50))
