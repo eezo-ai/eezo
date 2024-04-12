@@ -52,6 +52,10 @@ def chart_demo(c, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     m.notify()
 
+    agents = c.get_agents()
+    m.add("text", text=f"Agents: {agents}")
+    m.notify()
+
     c.load_state()
 
     print(c.state)

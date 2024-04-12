@@ -59,6 +59,10 @@ async def chart_demo(c, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     await m.notify()
 
+    agents = await c.get_agents()
+    m.add("text", text=f"Agents: {agents}")
+    await m.notify()
+
     await c.load_state()
 
     print(c.state)

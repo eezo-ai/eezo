@@ -17,6 +17,8 @@ CREATE_STATE_ENDPOINT = SERVER + "/v1/create-state/"
 READ_STATE_ENDPOINT = SERVER + "/v1/read-state/"
 UPDATE_STATE_ENDPOINT = SERVER + "/v1/update-state/"
 
+GET_AGENTS_ENDPOINT = SERVER + "/v1/get-agents/"
+
 
 class StateProxy:
     def __init__(self, interface):
@@ -151,32 +153,37 @@ class Interface:
             response = self.session.request(method, endpoint, json=payload)
             # Raises HTTPError for bad responses
             response.raise_for_status()
-            result = response.json()
-            return result.get("data", {}).get("state", {})
+            return response.json()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code in [401, 403]:
                 raise Exception("Authorization error. Check your API key.")
             elif e.response.status_code == 404:
                 if endpoint == READ_STATE_ENDPOINT or endpoint == UPDATE_STATE_ENDPOINT:
-                    result = self.create_state(self.user_id, {})
-                    return result.get("data", {}).get("state", {})
+                    return self.create_state(self.user_id, {})
                 else:
                     raise Exception("State not found.")
             else:
                 raise Exception(f"Unexpected error: {e.response.content}")
 
     def create_state(self, state_id, state={}):
-        return self.__request(
+        result = self.__request(
             "POST", CREATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
         )
+        return result.get("data", {}).get("state", {})
 
     def read_state(self, state_id):
-        return self.__request("POST", READ_STATE_ENDPOINT, {"state_id": state_id})
+        result = self.__request("POST", READ_STATE_ENDPOINT, {"state_id": state_id})
+        return result.get("data", {}).get("state", {})
 
     def update_state(self, state_id, state):
-        return self.__request(
+        result = self.__request(
             "POST", UPDATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
         )
+        return result.get("data", {}).get("state", {})
+
+    def get_agents(self):
+        result = self.__request("POST", GET_AGENTS_ENDPOINT, {"user_id": self.user_id})
+        return result.get("data", [])
 
     @property
     def state(self):
