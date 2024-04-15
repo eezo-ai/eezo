@@ -6,6 +6,7 @@ import asyncio
 import socketio
 import aiohttp
 import requests
+import uuid
 import time
 import os
 
@@ -147,8 +148,12 @@ class AsyncConnector:
         async def on_token_expired():
             await self.__authenticate()
 
+        def job_response(response):
+            self.__log(f"<< Job response received: {response}")
+            self.job_responses[response["id"]] = response
+
         self.sio.on("job_request", lambda p: asyncio.create_task(self.__execute_job(p)))
-        self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
+        self.sio.on("job_response", job_response)
         self.sio.on("token_expired", on_token_expired)
         self.sio.on("auth_error", auth_error)
 
@@ -184,12 +189,15 @@ class AsyncConnector:
 
 
 class Connector:
-    def __init__(self, api_key, connector_id, connector_function, logger=False):
+    def __init__(
+        self, api_key, connector_id, connector_function, job_responses, logger=False
+    ):
         self.api_key = api_key
         self.logger = logger
         self.func = connector_function
         self.connector_id = connector_id
-        self.job_responses = {}
+        # needs to be in the main thread
+        self.job_responses = job_responses
         self.user_id = None
         self.run_loop = True
 
@@ -233,21 +241,35 @@ class Connector:
         else:
             raise Exception(f"{response.status_code}: {response.json()['detail']}")
 
-    def __get_job_result(self, job_id):
+    def __run(self, skill_id, **kwargs):
+        """Invoke a skill and get the result."""
+        if not skill_id:
+            raise ValueError("skill_id is required")
+
+        job_id = str(uuid.uuid4())
+        self.sio.emit(
+            "invoke_skill",
+            {
+                "new_job_id": job_id,
+                "skill_id": skill_id,
+                "skill_payload": kwargs,
+            },
+        )
+
         while True:
             if job_id in self.job_responses:
                 response = self.job_responses.pop(job_id)
-                self.__log(f"<< Sub Job {job_id} completed.")
 
                 if not response.get("success", True):
                     self.__log(
-                        f" ✖ Sub Job {response['id']} failed:\n{response['traceback']}."
+                        f"<< Sub Job {response['id']} failed:\n{response['traceback']}."
                     )
                     raise Exception(response["error"])
 
+                self.__log(f"<< Sub Job {job_id} completed.")
                 return response["result"]
             else:
-                time.sleep(0.1)
+                time.sleep(1)
 
     def __execute_job(self, job_obj):
         job_id, connector_id, payload = (
@@ -265,8 +287,7 @@ class Connector:
                 user_id=self.user_id,
                 api_key=self.api_key,
                 cb_send_message=lambda p: self.sio.emit("direct_message", p),
-                cb_invoke_connector=lambda p: self.sio.emit("invoke_skill", p),
-                cb_get_result=self.__get_job_result,
+                cb_run=self.__run,
             )
             # Call the connector function with the interface object and the job payload
             result = self.func(i, **payload)
@@ -294,11 +315,8 @@ class Connector:
             self.__log(f" ✖ Authentication failed: {message}")
             self.run_loop = False
 
-        def job_response(response):
-            self.job_responses[response["id"]] = response
-
         self.sio.on("job_request", lambda p: self.__execute_job(p))
-        self.sio.on("job_response", job_response)
+        self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
         self.sio.on("token_expired", lambda: self.__authenticate())
         self.sio.on("auth_error", auth_error)
 

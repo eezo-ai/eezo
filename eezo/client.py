@@ -48,8 +48,12 @@ class Client:
             self.observer.schedule(RestartHandler(), ".", recursive=False)
             self.observer.start()
             self.futures = []
+            self.job_responses = {}
+
             for connector_id, func in self.connector_functions.items():
-                c = Connector(self.api_key, connector_id, func, self.logger)
+                c = Connector(
+                    self.api_key, connector_id, func, self.job_responses, self.logger
+                )
                 self.futures.append(self.executor.submit(c.connect))
 
             for future in self.futures:

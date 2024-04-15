@@ -156,7 +156,7 @@ class AsyncInterface:
                 if endpoint == READ_STATE_ENDPOINT or endpoint == UPDATE_STATE_ENDPOINT:
                     return await self.create_state(self.user_id, {})
                 else:
-                    raise Exception("State not found.") from e
+                    raise Exception(f"Not found: {endpoint}") from e
             else:
                 # For any other error, re-raise with the received error content.
                 raise Exception(f"Unexpected error: {e.response.content}") from e
