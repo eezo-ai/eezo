@@ -10,24 +10,58 @@ from eezo import Eezo
 
 e = Eezo(logger=True)
 
-# m = e.new_message(
-#     eezo_id=os.environ["DEMO_EEZO_ID"],
-#     thread_id=os.environ["DEMO_THREAD_ID"],
-#     context="test",
-# )
+# agents = e.get_agents()
+# for agent in agents.agents:
+#     print("--------------------------------------------------")
+#     print(agent.id)
+#     print(agent.name)
+#     print(agent.description)
+#     print(agent.status)
+#     print(agent.properties_schema)
+#     print(agent.properties_required)
+#     print(agent.return_schema)
+#     print(agent.input_model)
+#     print(agent.output_model)
+#     print()
+#     print(agent.to_dict())
+#     print("--------------------------------------------------")
 
-# m.add("text", text="Hello, world!")
-# m.notify()
+agent = e.get_agent("632f7b38-5982-4e6e-ab99-6468d37e4a64")
+print("--------------------------------------------------")
+print(agent.id)
+print(agent.name)
+print(agent.description)
+print(agent.status)
+print(agent.properties_schema)
+print(agent.properties_required)
+print(agent.return_schema)
+print(agent.input_model)
+print(agent.output_model)
+print()
+print(agent.to_dict())
+print(agent.is_online())
+print(agent.llm_string())
+print("--------------------------------------------------")
 
-# time.sleep(3)
 
-# m = e.update_message(m.id)
-# m.add("text", text="Hello, world! Updated!")
-# m.notify()
+m = e.new_message(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id=os.environ["DEMO_THREAD_ID"],
+    context="test",
+)
 
-# time.sleep(3)
+m.add("text", text="Hello, world!")
+m.notify()
 
-# e.delete_message(m.id)
+time.sleep(3)
+
+m = e.update_message(m.id)
+m.add("text", text="Hello, world! Updated!")
+m.notify()
+
+time.sleep(3)
+
+e.delete_message(m.id)
 
 
 def invoke(c, num_executions):
@@ -57,36 +91,32 @@ def chart_demo(c, **kwargs):
         chart_title="Example chart",
     )
     m.notify()
-    return {"status": "success"}
+    return {"status": "success", "test": "test"}
 
 
 @e.on(os.environ["DEMO_AGENT_ID_2"])
 def chart_demo(c, **kwargs):
     m = c.new_message()
     m.add("text", text="Hello, world 2")
-    # thread_str = c.get_thread(to_string=True)
-    # m.add("text", text=f"```{thread_str}```")
+    thread_str = c.get_thread(to_string=True)
+    m.add("text", text=f"```{thread_str}```")
     m.notify()
 
     results = invoke(c, 3)
     m.add("text", text=f"Result from Agent 1: {results}")
     m.notify()
 
-    # agents = c.get_agents()
-    # m.add("text", text=f"Agents: {agents}")
-    # m.notify()
+    c.load_state()
 
-    # c.load_state()
+    print(c.state)
+    print(c.state["test"])
+    print(c.state.get("test"))
 
-    # print(c.state)
-    # print(c.state["test"])
-    # print(c.state.get("test"))
+    c.state["test"] = c.state.get("test", 0) + 1
+    m.add("text", text=f"State: {c.state['test']}")
+    m.notify()
 
-    # c.state["test"] = c.state.get("test", 0) + 1
-    # m.add("text", text=f"State: {c.state['test']}")
-    # m.notify()
-
-    # c.save_state()
+    c.save_state()
 
 
 e.connect()

@@ -282,7 +282,7 @@ class Connector:
         )
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
-            i = Interface(
+            i: Interface = Interface(
                 job_id=job_id,
                 user_id=self.user_id,
                 api_key=self.api_key,
