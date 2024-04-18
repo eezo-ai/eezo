@@ -13,6 +13,57 @@ e = AsyncEezo(logger=True)
 
 
 async def sent_directly():
+    await e.load_state()
+
+    print(e.state)
+    print(e.state["test"])
+    print(e.state.get("test"))
+
+    e.state["test"] = e.state.get("test", 0) + 1
+    m = await e.new_message(
+        eezo_id=os.environ["DEMO_EEZO_ID"],
+        thread_id=os.environ["DEMO_THREAD_ID"],
+        context="test",
+    )
+    m.add("text", text=f"State: {e.state['test']}")
+    await m.notify()
+
+    await e.save_state()
+
+    agents = await e.get_agents()
+    for agent in agents.agents:
+        print("--------------------------------------------------")
+        print(agent.id)
+        print(agent.name)
+        print(agent.description)
+        print(agent.status)
+        print(agent.properties_schema)
+        print(agent.properties_required)
+        print(agent.return_schema)
+        print(agent.input_model)
+        print(agent.output_model)
+        print()
+        print(agent.is_online())
+        print(agent.to_dict())
+        print("--------------------------------------------------")
+
+    agent = await e.get_agent("632f7b38-5982-4e6e-ab99-6468d37e4a64")
+    print("--------------------------------------------------")
+    print(agent.id)
+    print(agent.name)
+    print(agent.description)
+    print(agent.status)
+    print(agent.properties_schema)
+    print(agent.properties_required)
+    print(agent.return_schema)
+    print(agent.input_model)
+    print(agent.output_model)
+    print()
+    print(agent.is_online())
+    print(agent.to_dict())
+    print(agent.llm_string())
+    print("--------------------------------------------------")
+
     m = await e.new_message(
         eezo_id=os.environ["DEMO_EEZO_ID"],
         thread_id=os.environ["DEMO_THREAD_ID"],
@@ -49,6 +100,7 @@ async def chart_demo(c, **kwargs):
         chart_title="Example chart",
     )
     await m.notify()
+    return {"status": "success", "test": "test"}
 
 
 @e.on(os.environ["DEMO_AGENT_ID_2"])
@@ -57,10 +109,12 @@ async def chart_demo(c, **kwargs):
     m.add("text", text="Hello, world 2")
     thread_str = await c.get_thread(to_string=True)
     m.add("text", text=f"```{thread_str}```")
+    thread_str = await c.get_thread()
+    m.add("text", text=f"```{thread_str}```")
     await m.notify()
 
-    agents = await c.get_agents()
-    m.add("text", text=f"Agents: {agents}")
+    result = await c.invoke(os.environ["DEMO_AGENT_ID_1"], query="AI no code platforms")
+    m.add("text", text=f"Result: {result}")
     await m.notify()
 
     await c.load_state()

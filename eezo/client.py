@@ -1,8 +1,10 @@
+from .errors import AuthorizationError, RequestError, ResourceNotFoundError
+from typing import Optional, Callable, Dict, List, Any
+from requests.packages.urllib3.util.retry import Retry
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
-
-from typing import Optional, Callable, Dict, List
+from requests.adapters import HTTPAdapter
 from .interface.interface import Message
+from watchdog.observers import Observer
 from .connector import Connector
 from .agent import Agents, Agent
 
@@ -11,14 +13,23 @@ import requests
 import sys
 import os
 
+from .state import StateProxy
+
 SERVER = "https://api-service-bofkvbi4va-ey.a.run.app"
 if os.environ.get("EEZO_DEV_MODE") == "True":
     print("Running in dev mode")
     SERVER = "http://localhost:8082"
 
+
+AUTH_URL = SERVER + "/v1/signin/"
+
 CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message/"
 READ_MESSAGE_ENDPOINT = SERVER + "/v1/read-message/"
 DELETE_MESSAGE_ENDPOINT = SERVER + "/v1/delete-message/"
+
+CREATE_STATE_ENDPOINT = SERVER + "/v1/create-state/"
+READ_STATE_ENDPOINT = SERVER + "/v1/read-state/"
+UPDATE_STATE_ENDPOINT = SERVER + "/v1/update-state/"
 
 GET_AGENTS_ENDPOINT = SERVER + "/v1/get-agents/"
 GET_AGENT_ENDPOINT = SERVER + "/v1/get-agent/"
@@ -51,8 +62,39 @@ class Client:
             api_key if api_key is not None else os.getenv("EEZO_API_KEY")
         )
         self.logger: bool = logger
+        self.state_was_loaded = False
+        self.user_id: Optional[str] = None
+        self.token: Optional[str] = None
+
+        self.session = self._configure_session()
+
+        self.user_id, self.token = self._request(
+            "POST", AUTH_URL, {"api_key": self.api_key}
+        )
+
         if not self.api_key:
             raise ValueError("Eezo api_key is required")
+
+        self._state_proxy: StateProxy = StateProxy(self)
+
+    @staticmethod
+    def _configure_session() -> requests.Session:
+        """
+        Configures and returns a requests.Session with automatic retries on certain status codes.
+
+        This static method sets up the session object which the Interface will use for all HTTP
+        communications. It adds automatic retries for the HTTP status codes in the `status_forcelist`,
+        with a total of 5 retries and a backoff factor of 1.
+        """
+        session = requests.Session()
+        retries = Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=[502, 503, 504],
+        )
+        session.mount("http://", HTTPAdapter(max_retries=retries))
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        return session
 
     def on(self, connector_id: str) -> Callable:
         """Decorator to register a connector function.
@@ -85,6 +127,7 @@ class Client:
                 c = Connector(
                     self.api_key, connector_id, func, self.job_responses, self.logger
                 )
+                c.authenticate()
                 self.futures.append(self.executor.submit(c.connect))
 
             for future in self.futures:
@@ -98,31 +141,42 @@ class Client:
             self.executor.shutdown(wait=False)
             self.observer.stop()
 
-    def __request(self, method: str, endpoint: str, payload: Dict) -> requests.Response:
-        """Make an HTTP request with specified method, endpoint, and payload.
+    def _request(
+        self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Sends an HTTP request to the given endpoint with the provided payload and returns the response.
 
         Args:
-            method (str): The HTTP method.
-            endpoint (str): The API endpoint.
-            payload (Dict): The payload for the request.
+            method: The HTTP method to use for the request.
+            endpoint: The URL endpoint to which the request is sent.
+            payload: A dictionary containing the payload for the request. Defaults to None.
 
-        Returns:
-            requests.Response: The response from the server.
-
-        Raises:
-            Exception: If the response status is unauthorized or an error occurred.
+        This method handles sending an HTTP request using the configured session object, including
+        the API key for authorization. It also provides comprehensive error handling, raising more
+        specific exceptions depending on the encountered HTTP error.
         """
+        if payload is None:
+            payload = {}
+        payload["api_key"] = self.api_key
         try:
-            response = requests.request(method, endpoint, json=payload)
-            if response.status_code == 401:
-                raise Exception(f"Unauthorized. Probably invalid api_key")
-            if response.status_code != 200:
-                raise Exception(
-                    f"Error {response.status_code}: {response.json()['detail']}"
-                )
-            return response
-        except requests.exceptions.RequestException as e:
-            raise requests.exceptions.RequestException(f"Request failed: {str(e)}")
+            response = self.session.request(method, endpoint, json=payload)
+            # Raises HTTPError for bad responses
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code
+            if status in [401, 403]:
+                raise AuthorizationError(
+                    "Authorization error. Check your API key."
+                ) from e
+            elif status == 404:
+                if endpoint in {READ_STATE_ENDPOINT, UPDATE_STATE_ENDPOINT}:
+                    return self.create_state(self.user_id)
+                else:
+                    raise ResourceNotFoundError(f"Not found: {endpoint}") from e
+            else:
+                raise RequestError(f"Unexpected error: {e.response.content}") from e
 
     def new_message(
         self, eezo_id: str, thread_id: str, context: str = "direct_message"
@@ -141,7 +195,7 @@ class Client:
 
         def notify():
             messgage_obj = new_message.to_dict()
-            self.__request(
+            self._request(
                 "POST",
                 CREATE_MESSAGE_ENDPOINT,
                 {
@@ -163,7 +217,7 @@ class Client:
         Args:
             message_id (str): The ID of the message to delete.
         """
-        self.__request(
+        self._request(
             "POST",
             DELETE_MESSAGE_ENDPOINT,
             {
@@ -184,7 +238,7 @@ class Client:
         Raises:
             Exception: If the message with the given ID is not found.
         """
-        response = self.__request(
+        response = self._request(
             "POST",
             READ_MESSAGE_ENDPOINT,
             {
@@ -193,15 +247,15 @@ class Client:
             },
         )
 
-        if "data" not in response.json():
+        if "data" not in response:
             raise Exception(f"Message not found for id {message_id}")
-        old_message_obj = response.json()["data"]
+        old_message_obj = response["data"]
 
         new_message = None
 
         def notify():
             messgage_obj = new_message.to_dict()
-            self.__request(
+            self._request(
                 "POST",
                 CREATE_MESSAGE_ENDPOINT,
                 {
@@ -228,10 +282,8 @@ class Client:
         Returns:
             Agents: A list of agents.
         """
-        response = self.__request(
-            "POST", GET_AGENTS_ENDPOINT, {"api_key": self.api_key}
-        )
-        agents_dict = response.json()["data"]
+        response = self._request("POST", GET_AGENTS_ENDPOINT, {"api_key": self.api_key})
+        agents_dict = response["data"]
         agents = Agents(agents_dict)
         if online_only:
             agents.agents = [agent for agent in agents.agents if agent.is_online()]
@@ -250,8 +302,84 @@ class Client:
         Raises:
             Exception: If the agent with the given ID is not found.
         """
-        response = self.__request(
+        response = self._request(
             "POST", GET_AGENT_ENDPOINT, {"api_key": self.api_key, "agent_id": agent_id}
         )
-        agent_dict = response.json()["data"]
+        agent_dict = response["data"]
         return Agent(**agent_dict)
+
+    def create_state(
+        self, state_id: str, state: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Creates a new state entry for the given state_id with the provided state dictionary.
+
+        Args:
+            state_id: A string that uniquely identifies the state to create.
+            state: An optional dictionary representing the state to be created. Defaults to an empty dict.
+
+        This method creates a new state for the given `state_id` using the `_request` method.
+        If a state is not provided, it initializes the state to an empty dictionary.
+        """
+        if state is None:
+            state = {}
+        result = self._request(
+            "POST", CREATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
+        )
+        return result.get("data", {}).get("state", {})
+
+    def read_state(self, state_id: str) -> Dict[str, Any]:
+        """
+        Reads and returns the state associated with the given state_id.
+
+        Args:
+            state_id: A string that uniquely identifies the state to read.
+
+        This method retrieves the state data from the server for the provided `state_id` by using the `_request` method.
+        """
+        result = self._request("POST", READ_STATE_ENDPOINT, {"state_id": state_id})
+        return result.get("data", {}).get("state", {})
+
+    def update_state(self, state_id: str, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Updates the state associated with the given state_id with the provided state dictionary.
+
+        Args:
+            state_id: A string that uniquely identifies the state to update.
+            state: A dictionary representing the new state data.
+
+        This method sends an update request for the state corresponding to `state_id` with the new `state`.
+        """
+        result = self._request(
+            "POST", UPDATE_STATE_ENDPOINT, {"state_id": state_id, "state": state}
+        )
+        return result.get("data", {}).get("state", {})
+
+    @property
+    def state(self):
+        """
+        Property that returns the state proxy associated with this client.
+
+        The state proxy provides a convenient way to manage the state data. It abstracts the details of
+        state loading and saving through the provided StateProxy instance.
+        """
+        return self._state_proxy
+
+    def load_state(self):
+        """
+        Loads the state data using the state proxy.
+
+        This method is a convenient wrapper around the `load` method of the `_state_proxy` object,
+        initiating the process of state data retrieval.
+        """
+        self._state_proxy.load()
+
+    def save_state(self):
+        """
+        Saves the current state data using the state proxy.
+
+        This method is a convenient wrapper around the `save` method of the `_state_proxy` object,
+        initiating the process of state data saving. It ensures that the current state data is
+        persisted through the associated client.
+        """
+        self._state_proxy.save()

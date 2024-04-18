@@ -44,6 +44,7 @@ class AsyncConnector:
         self.connector_id = connector_id
         self.job_responses = {}
         self.user_id = None
+        self.auth_token = None
         self.run_loop = True
 
         if logger:
@@ -77,7 +78,7 @@ class AsyncConnector:
         if self.logger:
             logging.info(message)
 
-    async def __authenticate(self):
+    async def authenticate(self) -> str:
         async with aiohttp.ClientSession() as session:
             url = f"{SERVER}{API_VERSION}{REST_AUTH_URL}"
             async with session.post(url, json={"api_key": self.api_key}) as response:
@@ -88,6 +89,8 @@ class AsyncConnector:
                 else:
                     resp_json = await response.json()
                     raise Exception(f"{response.status}: {resp_json['detail']}")
+
+        return self.user_id, self.auth_token
 
     async def __get_job_result(self, job_id):
         while job_id not in self.job_responses:
@@ -112,7 +115,7 @@ class AsyncConnector:
         )
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
-            i = AsyncInterface(
+            i: AsyncInterface = AsyncInterface(
                 job_id=job_id,
                 user_id=self.user_id,
                 api_key=self.api_key,
@@ -134,7 +137,8 @@ class AsyncConnector:
             await self.sio.emit("job_completed", job_completed.to_dict())
 
     async def connect(self):
-        await self.__authenticate()
+        if not self.auth_token:
+            raise Exception("Not authenticated")
 
         self.sio.on(
             "disconnect",
@@ -146,7 +150,7 @@ class AsyncConnector:
             self.run_loop = False
 
         async def on_token_expired():
-            await self.__authenticate()
+            await self.authenticate()
 
         def job_response(response):
             self.__log(f"<< Job response received: {response}")
@@ -199,6 +203,7 @@ class Connector:
         # needs to be in the main thread
         self.job_responses = job_responses
         self.user_id = None
+        self.auth_token = None
         self.run_loop = True
 
         if logger:
@@ -232,7 +237,7 @@ class Connector:
         if self.logger:
             logging.info(message)
 
-    def __authenticate(self):
+    def authenticate(self) -> str:
         url = f"{SERVER}{API_VERSION}{REST_AUTH_URL}"
         response = requests.post(url, json={"api_key": self.api_key})
         if response.status_code == 200:
@@ -240,6 +245,8 @@ class Connector:
             self.user_id = response.json().get("user_id")
         else:
             raise Exception(f"{response.status_code}: {response.json()['detail']}")
+
+        return self.user_id, self.auth_token
 
     def __run(self, skill_id, **kwargs):
         """Invoke a skill and get the result."""
@@ -304,7 +311,8 @@ class Connector:
             self.sio.emit("job_completed", job_completed.to_dict())
 
     def connect(self):
-        self.__authenticate()
+        if not self.auth_token:
+            raise Exception("Not authenticated")
 
         self.sio.on(
             "disconnect",
@@ -317,7 +325,7 @@ class Connector:
 
         self.sio.on("job_request", lambda p: self.__execute_job(p))
         self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
-        self.sio.on("token_expired", lambda: self.__authenticate())
+        self.sio.on("token_expired", lambda: self.authenticate())
         self.sio.on("auth_error", auth_error)
 
         while self.run_loop:
