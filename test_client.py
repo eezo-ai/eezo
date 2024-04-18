@@ -7,8 +7,12 @@ dotenv.load_dotenv()
 
 from eezo import Eezo
 
+e = Eezo(logger=True)
+
+time.sleep(3)
 
 e = Eezo(logger=True)
+
 
 e.load_state()
 

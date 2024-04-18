@@ -10,6 +10,7 @@ from .agent import Agents, Agent
 
 import concurrent.futures
 import requests
+import logging
 import sys
 import os
 
@@ -62,15 +63,22 @@ class Client:
             api_key if api_key is not None else os.getenv("EEZO_API_KEY")
         )
         self.logger: bool = logger
+        if self.logger:
+            logging.basicConfig(level=logging.INFO)
         self.state_was_loaded = False
-        self.user_id: Optional[str] = None
-        self.token: Optional[str] = None
+        self.user_id: Optional[str] = os.environ.get("EEZO_USER_ID")
+        self.token: Optional[str] = os.environ.get("EEZO_TOKEN")
 
         self.session = self._configure_session()
 
-        self.user_id, self.token = self._request(
-            "POST", AUTH_URL, {"api_key": self.api_key}
-        )
+        if not self.user_id or not self.token:
+            self.user_id, self.token = self._request(
+                "POST", AUTH_URL, {"api_key": self.api_key}
+            )
+            os.environ["EEZO_USER_ID"] = self.user_id
+            os.environ["EEZO_TOKEN"] = self.token
+        else:
+            logging.info("Already authenticated")
 
         if not self.api_key:
             raise ValueError("Eezo api_key is required")
@@ -163,10 +171,14 @@ class Client:
             response = self.session.request(method, endpoint, json=payload)
             # Raises HTTPError for bad responses
             response.raise_for_status()
+            logging.info(f"Request to {endpoint} successful \033[32m200\033[0m")
             return response.json()
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code
             if status in [401, 403]:
+                logging.error(
+                    "Eezo \033[31mauthorization error\033[0m. Check your API key."
+                )
                 raise AuthorizationError(
                     "Authorization error. Check your API key."
                 ) from e
@@ -174,8 +186,12 @@ class Client:
                 if endpoint in {READ_STATE_ENDPOINT, UPDATE_STATE_ENDPOINT}:
                     return self.create_state(self.user_id)
                 else:
+                    logging.error(f"Eezo \033[31mresource not found\033[0m: {endpoint}")
                     raise ResourceNotFoundError(f"Not found: {endpoint}") from e
             else:
+                logging.error(
+                    f"Eezo \033[31mrequest error\033[0m: {e.response.content}"
+                )
                 raise RequestError(f"Unexpected error: {e.response.content}") from e
 
     def new_message(

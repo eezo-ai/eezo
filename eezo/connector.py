@@ -72,11 +72,7 @@ class AsyncConnector:
                     "key": self.api_key,
                 },
             )
-            self.__log(f" ✔ Connector {self.connector_id} connected")
-
-    def __log(self, message):
-        if self.logger:
-            logging.info(message)
+            logging.info(f" ✔ Connector {self.connector_id} \033[32mconnected\033[0m")
 
     async def authenticate(self) -> str:
         async with aiohttp.ClientSession() as session:
@@ -96,9 +92,11 @@ class AsyncConnector:
         while job_id not in self.job_responses:
             await asyncio.sleep(0.1)
         response = self.job_responses.pop(job_id)
-        self.__log(f"<< Sub Job {job_id} completed")
+        logging.info(f"<< Sub Job {job_id} \033[32mcompleted\033[0m")
         if not response.get("success", True):
-            self.__log(f" ✖ Sub Job {response['id']} failed:\n{response['traceback']}.")
+            logging.info(
+                f" ✖ Sub Job {response['id']} failed:\n{response['traceback']}."
+            )
             raise Exception(
                 f"Propagating error from sub job {job_id}: {response['error']}"
             )
@@ -110,7 +108,7 @@ class AsyncConnector:
             job_obj["connector_id"],
             job_obj["job_payload"],
         )
-        self.__log(
+        logging.info(
             f"<< Job for connector {connector_id} received with payload: {payload}"
         )
         try:
@@ -126,7 +124,9 @@ class AsyncConnector:
             result = await self.func(i, **payload)
             await self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            self.__log(f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}")
+            logging.info(
+                f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}"
+            )
             job_completed = JobCompleted(
                 result=None,
                 success=False,
@@ -142,18 +142,18 @@ class AsyncConnector:
 
         self.sio.on(
             "disconnect",
-            lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
+            lambda: logging.info(f" ✖ Connector {self.connector_id} disconnected"),
         )
 
         def auth_error(message: str):
-            self.__log(f" ✖ Authentication failed: {message}")
+            logging.info(f" ✖ Authentication failed: {message}")
             self.run_loop = False
 
         async def on_token_expired():
             await self.authenticate()
 
         def job_response(response):
-            self.__log(f"<< Job response received: {response}")
+            logging.info(f"<< Job response received: {response}")
             self.job_responses[response["id"]] = response
 
         self.sio.on("job_request", lambda p: asyncio.create_task(self.__execute_job(p)))
@@ -168,10 +168,10 @@ class AsyncConnector:
             except socketio.exceptions.ConnectionError as e:
                 if self.run_loop:
                     if self.logger:
-                        self.__log(
+                        logging.info(
                             f" ✖ Connector {self.connector_id} failed to connect"
                         )
-                        self.__log("   Retrying to connect...")
+                        logging.info("   Retrying to connect...")
                     await asyncio.sleep(5)
                 else:
                     break
@@ -181,10 +181,10 @@ class AsyncConnector:
             except Exception as e:
                 if self.run_loop:
                     if self.logger:
-                        self.__log(
+                        logging.info(
                             f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
                         )
-                        self.__log("   Retrying to connect...")
+                        logging.info("   Retrying to connect...")
                     await asyncio.sleep(5)
                 else:
                     break
@@ -231,7 +231,7 @@ class Connector:
                     "key": self.api_key,
                 },
             )
-            self.__log(f" ✔ Connector {self.connector_id} connected")
+            logging.info(f" ✔ Connector {self.connector_id} \033[32mconnected\033[0m")
 
     def __log(self, message):
         if self.logger:
@@ -268,12 +268,12 @@ class Connector:
                 response = self.job_responses.pop(job_id)
 
                 if not response.get("success", True):
-                    self.__log(
+                    logging.info(
                         f"<< Sub Job {response['id']} failed:\n{response['traceback']}."
                     )
                     raise Exception(response["error"])
 
-                self.__log(f"<< Sub Job {job_id} completed.")
+                logging.info(f"<< Sub Job {job_id} \033[32mcompleted\033[0m.")
                 return response["result"]
             else:
                 time.sleep(1)
@@ -284,7 +284,7 @@ class Connector:
             job_obj["connector_id"],
             job_obj["job_payload"],
         )
-        self.__log(
+        logging.info(
             f"<< Job for connector {connector_id} received with payload: {payload}"
         )
         try:
@@ -300,7 +300,9 @@ class Connector:
             result = self.func(i, **payload)
             self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            self.__log(f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}")
+            logging.info(
+                f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}"
+            )
             job_completed = JobCompleted(
                 result=None,
                 success=False,
@@ -316,11 +318,11 @@ class Connector:
 
         self.sio.on(
             "disconnect",
-            lambda: self.__log(f" ✖ Connector {self.connector_id} disconnected"),
+            lambda: logging.info(f" ✖ Connector {self.connector_id} disconnected"),
         )
 
         def auth_error(message: str):
-            self.__log(f" ✖ Authentication failed: {message}")
+            logging.info(f" ✖ Authentication failed: {message}")
             self.run_loop = False
 
         self.sio.on("job_request", lambda p: self.__execute_job(p))
@@ -335,10 +337,10 @@ class Connector:
             except socketio.exceptions.ConnectionError as e:
                 if self.run_loop:
                     if self.logger:
-                        self.__log(
+                        logging.info(
                             f" ✖ Connector {self.connector_id} failed to connect"
                         )
-                        self.__log("   Retrying to connect...")
+                        logging.info("   Retrying to connect...")
                     time.sleep(5)
                 else:
                     break
@@ -348,10 +350,10 @@ class Connector:
             except Exception as e:
                 if self.run_loop:
                     if self.logger:
-                        self.__log(
+                        logging.info(
                             f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
                         )
-                        self.__log("   Retrying to connect...")
+                        logging.info("   Retrying to connect...")
                     time.sleep(5)
                 else:
                     break
