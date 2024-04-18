@@ -10,21 +10,21 @@ from eezo import Eezo
 
 e = Eezo(logger=True)
 
-# agents = e.get_agents()
-# for agent in agents.agents:
-#     print("--------------------------------------------------")
-#     print(agent.id)
-#     print(agent.name)
-#     print(agent.description)
-#     print(agent.status)
-#     print(agent.properties_schema)
-#     print(agent.properties_required)
-#     print(agent.return_schema)
-#     print(agent.input_model)
-#     print(agent.output_model)
-#     print()
-#     print(agent.to_dict())
-#     print("--------------------------------------------------")
+agents = e.get_agents()
+for agent in agents.agents:
+    print("--------------------------------------------------")
+    print(agent.id)
+    print(agent.name)
+    print(agent.description)
+    print(agent.status)
+    print(agent.properties_schema)
+    print(agent.properties_required)
+    print(agent.return_schema)
+    print(agent.input_model)
+    print(agent.output_model)
+    print()
+    print(agent.to_dict())
+    print("--------------------------------------------------")
 
 agent = e.get_agent("632f7b38-5982-4e6e-ab99-6468d37e4a64")
 print("--------------------------------------------------")
@@ -43,6 +43,7 @@ print(agent.is_online())
 print(agent.llm_string())
 print("--------------------------------------------------")
 
+exit()
 
 m = e.new_message(
     eezo_id=os.environ["DEMO_EEZO_ID"],

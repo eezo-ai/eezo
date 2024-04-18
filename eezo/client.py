@@ -254,4 +254,4 @@ class Client:
             "POST", GET_AGENT_ENDPOINT, {"api_key": self.api_key, "agent_id": agent_id}
         )
         agent_dict = response.json()["data"]
-        return Agents([agent_dict]).agents[0]
+        return Agent(**agent_dict)
