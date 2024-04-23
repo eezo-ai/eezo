@@ -64,7 +64,7 @@ class Client:
         )
         self.logger: bool = logger
         if self.logger:
-            logging.basicConfig(level=logging.INFO)
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
         self.state_was_loaded = False
         self.user_id: Optional[str] = os.environ.get("EEZO_USER_ID")
         self.token: Optional[str] = os.environ.get("EEZO_TOKEN")
@@ -168,7 +168,7 @@ class Client:
             payload = {}
         payload["api_key"] = self.api_key
         try:
-            response = self.session.request(method, endpoint, json=payload)
+            response = self.session.request(method, endpoint, json=payload, timeout=10)
             # Raises HTTPError for bad responses
             response.raise_for_status()
             logging.info(f"Request to {endpoint} successful \033[32m200\033[0m")

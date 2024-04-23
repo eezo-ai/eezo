@@ -48,11 +48,7 @@ class AsyncConnector:
         self.run_loop = True
 
         if logger:
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s: %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s: %(message)s")
 
         self.sio = socketio.AsyncClient(
             reconnection_attempts=0,
@@ -72,12 +68,14 @@ class AsyncConnector:
                     "key": self.api_key,
                 },
             )
-            logging.info(f" ✔ Connector {self.connector_id} \033[32mconnected\033[0m")
+            logging.info(f" ✔ Agent {self.connector_id} \033[32mconnected\033[0m")
 
     async def authenticate(self) -> str:
         async with aiohttp.ClientSession() as session:
             url = f"{SERVER}{API_VERSION}{REST_AUTH_URL}"
-            async with session.post(url, json={"api_key": self.api_key}) as response:
+            async with session.post(
+                url, json={"api_key": self.api_key}, timeout=10
+            ) as response:
                 if response.status == 200:
                     resp_json = await response.json()
                     self.auth_token = resp_json.get("token")
@@ -108,9 +106,7 @@ class AsyncConnector:
             job_obj["connector_id"],
             job_obj["job_payload"],
         )
-        logging.info(
-            f"<< Job for connector {connector_id} received with payload: {payload}"
-        )
+        logging.info(f"<< Job for Agent {connector_id} received: {payload}")
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i: AsyncInterface = AsyncInterface(
@@ -124,9 +120,7 @@ class AsyncConnector:
             result = await self.func(i, **payload)
             await self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            logging.info(
-                f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}"
-            )
+            logging.info(f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
                 success=False,
@@ -142,7 +136,7 @@ class AsyncConnector:
 
         self.sio.on(
             "disconnect",
-            lambda: logging.info(f" ✖ Connector {self.connector_id} disconnected"),
+            lambda: logging.info(f" ✖ Agent {self.connector_id} disconnected"),
         )
 
         def auth_error(message: str):
@@ -168,9 +162,7 @@ class AsyncConnector:
             except socketio.exceptions.ConnectionError as e:
                 if self.run_loop:
                     if self.logger:
-                        logging.info(
-                            f" ✖ Connector {self.connector_id} failed to connect"
-                        )
+                        logging.info(f" ✖ Agent {self.connector_id} failed to connect")
                         logging.info("   Retrying to connect...")
                     await asyncio.sleep(5)
                 else:
@@ -182,7 +174,7 @@ class AsyncConnector:
                 if self.run_loop:
                     if self.logger:
                         logging.info(
-                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                            f" ✖ Agent {self.connector_id} failed to connect with error: {e}"
                         )
                         logging.info("   Retrying to connect...")
                     await asyncio.sleep(5)
@@ -207,11 +199,7 @@ class Connector:
         self.run_loop = True
 
         if logger:
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s: %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s: %(message)s")
 
         self.sio = socketio.Client(
             reconnection_attempts=0,
@@ -231,15 +219,11 @@ class Connector:
                     "key": self.api_key,
                 },
             )
-            logging.info(f" ✔ Connector {self.connector_id} \033[32mconnected\033[0m")
-
-    def __log(self, message):
-        if self.logger:
-            logging.info(message)
+            logging.info(f" ✔ Agent {self.connector_id} \033[32mconnected\033[0m")
 
     def authenticate(self) -> str:
         url = f"{SERVER}{API_VERSION}{REST_AUTH_URL}"
-        response = requests.post(url, json={"api_key": self.api_key})
+        response = requests.post(url, json={"api_key": self.api_key}, timeout=10)
         if response.status_code == 200:
             self.auth_token = response.json().get("token")
             self.user_id = response.json().get("user_id")
@@ -284,9 +268,7 @@ class Connector:
             job_obj["connector_id"],
             job_obj["job_payload"],
         )
-        logging.info(
-            f"<< Job for connector {connector_id} received with payload: {payload}"
-        )
+        logging.info(f"<< Job for agent {connector_id} received: {payload}")
         try:
             # Create an interface object that the connector function can use to interact with the Eezo server
             i: Interface = Interface(
@@ -297,12 +279,11 @@ class Connector:
                 cb_run=self.__run,
             )
             # Call the connector function with the interface object and the job payload
+            print("running with", payload)
             result = self.func(i, **payload)
             self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
         except Exception as e:
-            logging.info(
-                f" ✖ Connector {connector_id} failed:\n{traceback.format_exc()}"
-            )
+            logging.info(f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
                 success=False,
@@ -318,7 +299,7 @@ class Connector:
 
         self.sio.on(
             "disconnect",
-            lambda: logging.info(f" ✖ Connector {self.connector_id} disconnected"),
+            lambda: logging.info(f" ✖ Agent {self.connector_id} disconnected"),
         )
 
         def auth_error(message: str):
@@ -338,7 +319,7 @@ class Connector:
                 if self.run_loop:
                     if self.logger:
                         logging.info(
-                            f" ✖ Connector {self.connector_id} failed to connect"
+                            f" ✖ Agent {self.connector_id} failed to connect with error: {e}"
                         )
                         logging.info("   Retrying to connect...")
                     time.sleep(5)
@@ -351,7 +332,7 @@ class Connector:
                 if self.run_loop:
                     if self.logger:
                         logging.info(
-                            f" ✖ Connector {self.connector_id} failed to connect with error: {e}"
+                            f" ✖ Agent {self.connector_id} failed to connect with error: {e}"
                         )
                         logging.info("   Retrying to connect...")
                     time.sleep(5)
