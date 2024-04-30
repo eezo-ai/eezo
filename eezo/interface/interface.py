@@ -19,6 +19,7 @@ class Interface:
         job_id: str,
         user_id: str,
         api_key: str,
+        connector_id: str,
         cb_send_message: Callable[[Dict[str, Any]], Any],
         cb_run: Callable[..., Any],
     ):
@@ -29,6 +30,7 @@ class Interface:
             job_id: A unique identifier for the job to which this interface pertains.
             user_id: A unique identifier for the user who is associated with this job.
             api_key: A string that represents the API key for authentication.
+            connector_id: A string that represents the connector ID for the interface.
             cb_send_message: A callback function that is used to send messages.
             cb_run: A callback function that is used to execute agents or skills.
 
@@ -40,6 +42,7 @@ class Interface:
         self.message: Optional[Message] = None
         self.user_id = user_id
         self.api_key = api_key
+        self.connector_id = connector_id
         self.send_message = cb_send_message
         self._run = cb_run
 
@@ -70,6 +73,7 @@ class Interface:
             {
                 "message_id": message_obj["id"],
                 "interface": message_obj["interface"],
+                "connector_id": self.connector_id,
             }
         )
 
@@ -84,7 +88,10 @@ class Interface:
         The method delegates the operation to the `_run` callback, providing the required parameters.
         """
         return self._run(
-            skill_id="s_get_thread", nr_of_messages=nr, to_string=to_string
+            skill_id="s_get_thread",
+            connector_id=self.connector_id,
+            nr_of_messages=nr,
+            to_string=to_string,
         )
 
     def invoke(self, agent_id: str, **kwargs: Any) -> Any:
@@ -98,4 +105,4 @@ class Interface:
         This method utilizes the `_run` callback to execute the agent or skill identified by `agent_id`
         with the given keyword arguments.
         """
-        return self._run(skill_id=agent_id, **kwargs)
+        return self._run(skill_id=agent_id, connector_id=self.connector_id, **kwargs)

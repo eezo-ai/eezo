@@ -19,8 +19,11 @@ REST_AUTH_URL = "/signin/"
 
 
 class JobCompleted:
-    def __init__(self, result, success, error=None, traceback=None, error_tag=None):
+    def __init__(
+        self, connector_id, result, success, error=None, traceback=None, error_tag=None
+    ):
         self.result = result
+        self.connector_id = connector_id
         self.success = success
         self.error = error
         self.traceback = traceback
@@ -29,6 +32,7 @@ class JobCompleted:
     def to_dict(self):
         return {
             "result": self.result,
+            "connector_id": self.connector_id,
             "success": self.success,
             "error": self.error,
             "traceback": self.traceback,
@@ -113,16 +117,20 @@ class AsyncConnector:
                 job_id=job_id,
                 user_id=self.user_id,
                 api_key=self.api_key,
+                connector_id=self.connector_id,
                 cb_send_message=lambda p: self.sio.emit("direct_message", p),
                 cb_invoke_connector=lambda p: self.sio.emit("invoke_skill", p),
                 cb_get_result=self.__get_job_result,
             )
             result = await self.func(i, **payload)
-            await self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
+            await self.sio.emit(
+                "job_completed", JobCompleted(result, self.connector_id, True).to_dict()
+            )
         except Exception as e:
             logging.info(f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
+                connector_id=self.connector_id,
                 success=False,
                 error=str(e),
                 traceback=traceback.format_exc(),
@@ -244,6 +252,7 @@ class Connector:
                 "new_job_id": job_id,
                 "skill_id": skill_id,
                 "skill_payload": kwargs,
+                "connector_id": self.connector_id,
             },
         )
 
@@ -275,17 +284,21 @@ class Connector:
                 job_id=job_id,
                 user_id=self.user_id,
                 api_key=self.api_key,
+                connector_id=self.connector_id,
                 cb_send_message=lambda p: self.sio.emit("direct_message", p),
                 cb_run=self.__run,
             )
             # Call the connector function with the interface object and the job payload
             print("running with", payload)
             result = self.func(i, **payload)
-            self.sio.emit("job_completed", JobCompleted(result, True).to_dict())
+            self.sio.emit(
+                "job_completed", JobCompleted(result, self.connector_id, True).to_dict()
+            )
         except Exception as e:
             logging.info(f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}")
             job_completed = JobCompleted(
                 result=None,
+                connector_id=self.connector_id,
                 success=False,
                 error=str(e),
                 traceback=str(traceback.format_exc()),
@@ -297,11 +310,6 @@ class Connector:
         if not self.auth_token:
             raise Exception("Not authenticated")
 
-        self.sio.on(
-            "disconnect",
-            lambda: logging.info(f" ✖ Agent {self.connector_id} disconnected"),
-        )
-
         def auth_error(message: str):
             logging.info(f" ✖ Authentication failed: {message}")
             self.run_loop = False
@@ -310,6 +318,10 @@ class Connector:
         self.sio.on("job_response", lambda p: self.job_responses.update({p["id"]: p}))
         self.sio.on("token_expired", lambda: self.authenticate())
         self.sio.on("auth_error", auth_error)
+        self.sio.on(
+            "disconnect",
+            lambda: logging.info(f" ✖ Agent {self.connector_id} disconnected"),
+        )
 
         while self.run_loop:
             try:

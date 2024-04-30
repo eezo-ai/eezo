@@ -1,11 +1,12 @@
 import concurrent.futures
 import dotenv
-import time
 import os
 
 dotenv.load_dotenv()
+print("EEZO_DEV_MODE:", os.environ["EEZO_DEV_MODE"] == "True")
 
 from eezo import Eezo
+
 
 e = Eezo(logger=True)
 
@@ -65,14 +66,16 @@ e = Eezo(logger=True)
 # print(agent.llm_string())
 # print("--------------------------------------------------")
 
-# m = e.new_message(
-#     eezo_id=os.environ["DEMO_EEZO_ID"],
-#     thread_id=os.environ["DEMO_THREAD_ID"],
-#     context="test",
-# )
+m = e.new_message(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id="asd",
+    context="test",
+)
 
-# m.add("text", text="Hello, world!")
-# m.notify()
+m.add("text", text="Hello, world!")
+m.notify()
+
+exit()
 
 # time.sleep(3)
 
@@ -104,14 +107,14 @@ def chart_demo(c, **kwargs):
     print("Chart demo")
     m = c.new_message()
     m.add("text", text=f"Hello, world 1. Query: {kwargs.get('query')}")
-    m.add(
-        "chart",
-        chart_type="candlestick",
-        data=[[10, 15, 5, 12], [11, 13, 9, 8], [12, 12, 10, 11]],
-        xaxis=["a", "b", "c"],
-        name="Example chart",
-        chart_title="Example chart",
-    )
+    # m.add(
+    #     "chart",
+    #     chart_type="candlestick",
+    #     data=[[10, 15, 5, 12], [11, 13, 9, 8], [12, 12, 10, 11]],
+    #     xaxis=["a", "b", "c"],
+    #     name="Example chart",
+    #     chart_title="Example chart",
+    # )
     m.notify()
     return {"status": "success", "test": "test"}
 
@@ -121,10 +124,10 @@ def invoke_demo(c, **kwargs):
     print("Invoke demo")
     m = c.new_message()
     m.add("text", text="Hello, world 2")
-    thread_str = c.get_thread(to_string=True)
-    m.add("text", text=f"```{thread_str}```")
-    thread_str = c.get_thread()
-    m.add("text", text=f"```{thread_str}```")
+    # thread_str = c.get_thread(to_string=True)
+    # m.add("text", text=f"```{thread_str}```")
+    # thread_str = c.get_thread()
+    # m.add("text", text=f"```{thread_str}```")
     m.notify()
 
     results = invoke(c, 3)

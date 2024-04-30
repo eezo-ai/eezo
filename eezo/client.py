@@ -2,16 +2,20 @@ from .errors import AuthorizationError, RequestError, ResourceNotFoundError
 from typing import Optional, Callable, Dict, List, Any
 from requests.packages.urllib3.util.retry import Retry
 from watchdog.events import FileSystemEventHandler
+from .interface.interface import Interface
 from requests.adapters import HTTPAdapter
 from .interface.interface import Message
 from watchdog.observers import Observer
-from .connector import Connector
 from .agent import Agents, Agent
 
 import concurrent.futures
+import socketio
 import requests
 import logging
 import sys
+import time
+import uuid
+import traceback
 import os
 
 from .state import StateProxy
@@ -42,6 +46,28 @@ class RestartHandler(FileSystemEventHandler):
             os.execl(sys.executable, sys.executable, *sys.argv)
 
 
+class JobCompleted:
+    def __init__(
+        self, connector_id, result, success, error=None, traceback=None, error_tag=None
+    ):
+        self.result = result
+        self.connector_id = connector_id
+        self.success = success
+        self.error = error
+        self.traceback = traceback
+        self.error_tag = error_tag
+
+    def to_dict(self):
+        return {
+            "result": self.result,
+            "connector_id": self.connector_id,
+            "success": self.success,
+            "error": self.error,
+            "traceback": self.traceback,
+            "error_tag": self.error_tag,
+        }
+
+
 class Client:
     def __init__(self, api_key: Optional[str] = None, logger: bool = False) -> None:
         """Initialize the Client with an optional API key and a logger flag.
@@ -66,17 +92,20 @@ class Client:
         if self.logger:
             logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
         self.state_was_loaded = False
-        self.user_id: Optional[str] = os.environ.get("EEZO_USER_ID")
-        self.token: Optional[str] = os.environ.get("EEZO_TOKEN")
+        self.user_id: Optional[str] = os.environ.get("EEZO_USER_ID", None)
+        self.auth_token: Optional[str] = os.environ.get("EEZO_TOKEN", None)
+        self.job_responses: Dict[str, str] = {}
+        self.run_loop = True
+        self.sio: Optional[socketio.Client] = None
 
         self.session = self._configure_session()
 
-        if not self.user_id or not self.token:
-            self.user_id, self.token = self._request(
-                "POST", AUTH_URL, {"api_key": self.api_key}
-            )
+        if not self.user_id or not self.auth_token:
+            result = self._request("POST", AUTH_URL, {"api_key": self.api_key})
+            self.user_id = result.get("user_id")
+            self.auth_token = result.get("token")
             os.environ["EEZO_USER_ID"] = self.user_id
-            os.environ["EEZO_TOKEN"] = self.token
+            os.environ["EEZO_TOKEN"] = self.auth_token
         else:
             logging.info("Already authenticated")
 
@@ -117,10 +146,90 @@ class Client:
         def decorator(func: Callable) -> Callable:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func)} instead")
-            self.connector_functions[connector_id] = func
+            self.add_connector(connector_id, func)
             return func
 
         return decorator
+
+    def add_connector(self, connector_id: str, func: Callable) -> None:
+        """Add a connector function to the client.
+
+        Args:
+            connector_id (str): The identifier for the connector.
+            func (Callable): The connector function to add.
+        """
+        self.connector_functions[connector_id] = func
+
+    def __run(self, skill_id: str, connector_id: str, **kwargs):
+        """Invoke a skill and get the result."""
+        if not skill_id:
+            raise ValueError("skill_id is required")
+
+        job_id = str(uuid.uuid4())
+        self.sio.emit(
+            "invoke_skill",
+            {
+                "new_job_id": job_id,
+                "skill_id": skill_id,
+                "skill_payload": kwargs,
+                "connector_id": connector_id,
+            },
+        )
+
+        while True:
+            if job_id in self.job_responses:
+                response = self.job_responses.pop(job_id)
+
+                if not response.get("success", True):
+                    logging.info(
+                        f"<< Sub Job {response['id']} failed:\n{response['traceback']}."
+                    )
+                    raise Exception(response["error"])
+
+                logging.info(f"<< Sub Job {job_id} \033[32mcompleted\033[0m.")
+                return response["result"]
+            else:
+                time.sleep(1)
+
+    def __execute_job(self, job_obj):
+        job_id, connector_id, payload = (
+            job_obj["job_id"],
+            job_obj["connector_id"],
+            job_obj["job_payload"],
+        )
+        logging.info(f"<< Job for agent {connector_id} received: {payload}")
+        # Create an interface object that the connector function can use to interact with the Eezo server
+        i: Interface = Interface(
+            job_id=job_id,
+            user_id=self.user_id,
+            api_key=self.api_key,
+            connector_id=connector_id,
+            cb_send_message=lambda p: self.sio.emit("direct_message", p),
+            cb_run=self.__run,
+        )
+
+        def execute():
+            try:
+                result = self.connector_functions[connector_id](i, **payload)
+                self.sio.emit(
+                    "job_completed",
+                    JobCompleted(connector_id, result, True).to_dict(),
+                )
+            except Exception as e:
+                logging.info(
+                    f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}"
+                )
+                job_completed = JobCompleted(
+                    connector_id=connector_id,
+                    result=None,
+                    success=False,
+                    error=str(e),
+                    traceback=str(traceback.format_exc()),
+                    error_tag="Connector error",
+                )
+                self.sio.emit("job_completed", job_completed.to_dict())
+
+        self.executor.submit(execute)
 
     def connect(self) -> None:
         """Connect to the Eezo server and start the client. This involves scheduling
@@ -128,25 +237,99 @@ class Client:
         try:
             self.observer.schedule(RestartHandler(), ".", recursive=False)
             self.observer.start()
-            self.futures = []
-            self.job_responses: Dict[str, str] = {}
+            # self.futures = []
 
-            for connector_id, func in self.connector_functions.items():
-                c = Connector(
-                    self.api_key, connector_id, func, self.job_responses, self.logger
+            # for connector_id, func in self.connector_functions.items():
+            #     c = Connector(
+            #         self.api_key, connector_id, func, self.job_responses, self.logger
+            #     )
+            #     c.authenticate()
+            #     self.futures.append(self.executor.submit(c.connect))
+
+            # for future in self.futures:
+            #     future.result()
+
+            self.sio = socketio.Client(
+                reconnection_attempts=0,
+                reconnection_delay_max=10,
+                reconnection_delay=1,
+                engineio_logger=False,
+                logger=False,
+            )
+
+            @self.sio.event
+            def connect():
+                connector_ids = list(self.connector_functions.keys())
+                self.sio.emit(
+                    "authenticate",
+                    {
+                        "token": self.auth_token,
+                        "cids": connector_ids,
+                        "key": self.api_key,
+                    },
                 )
-                c.authenticate()
-                self.futures.append(self.executor.submit(c.connect))
+                for connector_id in connector_ids:
+                    logging.info(f" ✔ Agent {connector_id} \033[32mconnected\033[0m")
 
-            for future in self.futures:
-                future.result()
+            if not self.auth_token:
+                raise Exception("Not authenticated")
+
+            def auth_error(message: str):
+                logging.info(f" ✖ Authentication failed: {message}")
+                self.run_loop = False
+
+            # Both functions have to address the right connector
+            self.sio.on("job_request", lambda p: self.__execute_job(p))
+
+            self.sio.on(
+                "job_response", lambda p: self.job_responses.update({p["id"]: p})
+            )
+
+            self.sio.on("token_expired", lambda: self.authenticate())
+            self.sio.on("auth_error", auth_error)
+
+            def disconnect():
+                for connector_id in self.connector_functions:
+                    logging.info(f" ✖ Agent {connector_id} \033[31mdisconnected\033[0m")
+
+            self.sio.on("disconnect", lambda: disconnect())
+
+            while self.run_loop:
+                try:
+                    self.sio.connect(SERVER)
+                    self.sio.wait()
+                except socketio.exceptions.ConnectionError as e:
+                    if self.run_loop:
+                        if self.logger:
+                            logging.info(
+                                f" ✖ Failed to connect to Eezo server with error: {e}"
+                            )
+                            logging.info("   Retrying to connect...")
+                        time.sleep(5)
+                    else:
+                        break
+                except KeyboardInterrupt:
+                    self.run_loop = False
+                    break
+                except Exception as e:
+                    if self.run_loop:
+                        if self.logger:
+                            logging.info(
+                                f" ✖ Failed to connect to Eezo server with error: {e}"
+                            )
+                            logging.info("   Retrying to connect...")
+                        time.sleep(5)
+                    else:
+                        break
+
+                self.sio.disconnect()
 
         except KeyboardInterrupt:
             pass
         finally:
-            for future in self.futures:
-                future.cancel()
-            self.executor.shutdown(wait=False)
+            # for future in self.futures:
+            #     future.cancel()
+            # self.executor.shutdown(wait=False)
             self.observer.stop()
 
     def _request(
@@ -175,6 +358,7 @@ class Client:
             return response.json()
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code
+            error_message = e.response.text
             if status in [401, 403]:
                 logging.error(
                     "Eezo \033[31mauthorization error\033[0m. Check your API key."
@@ -186,13 +370,16 @@ class Client:
                 if endpoint in {READ_STATE_ENDPOINT, UPDATE_STATE_ENDPOINT}:
                     return self.create_state(self.user_id)
                 else:
-                    logging.error(f"Eezo \033[31mresource not found\033[0m: {endpoint}")
-                    raise ResourceNotFoundError(f"Not found: {endpoint}") from e
+                    logging.error(f"Resource not found: \033[31m{error_message}\033[0m")
+                    raise ResourceNotFoundError(error_message) from e
             else:
                 logging.error(
-                    f"Eezo \033[31mrequest error\033[0m: {e.response.content}"
+                    f"Unexpected error: \033[31m{error_message} (status code: {status})\033[0m"
                 )
                 raise RequestError(f"Unexpected error: {e.response.content}") from e
+        except Exception as e:
+            logging.error(f"Unexpected error: \033[31m{e}\033[0m")
+            raise RequestError(f"Unexpected error: {e}") from e
 
     def new_message(
         self, eezo_id: str, thread_id: str, context: str = "direct_message"

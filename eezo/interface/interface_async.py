@@ -10,6 +10,7 @@ class AsyncInterface:
         job_id: str,
         user_id: str,
         api_key: str,
+        connector_id: str,
         cb_send_message: Callable[[Dict[str, Any]], Any],
         cb_invoke_connector: Callable[[Dict[str, Any]], Any],
         cb_get_result: Callable[[str], Any],
@@ -32,6 +33,7 @@ class AsyncInterface:
         self.message: Optional[Message] = None
         self.user_id: str = user_id
         self.api_key: str = api_key
+        self.connector_id: str = connector_id
         self.send_message: Callable[[Dict[str, Any]], Any] = cb_send_message
         self.invoke_connector: Callable[[Dict[str, Any]], Any] = cb_invoke_connector
         self.get_result: Callable[[str], Any] = cb_get_result
@@ -65,6 +67,7 @@ class AsyncInterface:
             {
                 "message_id": message_obj["id"],
                 "interface": message_obj["interface"],
+                "connector_id": "connector_id",
             }
         )
 
@@ -94,6 +97,7 @@ class AsyncInterface:
                 "new_job_id": job_id,
                 "skill_id": skill_id,
                 "skill_payload": kwargs,
+                "connector_id": self.connector_id,
             }
         )
         return await self.get_result(job_id)
