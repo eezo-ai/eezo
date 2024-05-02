@@ -132,7 +132,7 @@ def invoke_demo(c, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     m.notify()
 
-    results = invoke(c, 20)
+    results = invoke(c, 5)
     m.add("text", text=f"Result from Agent 1: {results}")
     m.notify()
 
