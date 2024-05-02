@@ -48,10 +48,16 @@ class RestartHandler(FileSystemEventHandler):
 
 class JobCompleted:
     def __init__(
-        self, connector_id, result, success, error=None, traceback=None, error_tag=None
+        self,
+        job_id: str,
+        result: Dict,
+        success: bool,
+        error=None,
+        traceback=None,
+        error_tag=None,
     ):
         self.result = result
-        self.connector_id = connector_id
+        self.job_id = job_id
         self.success = success
         self.error = error
         self.traceback = traceback
@@ -60,7 +66,7 @@ class JobCompleted:
     def to_dict(self):
         return {
             "result": self.result,
-            "connector_id": self.connector_id,
+            "job_id": self.job_id,
             "success": self.success,
             "error": self.error,
             "traceback": self.traceback,
@@ -97,6 +103,7 @@ class Client:
         self.job_responses: Dict[str, str] = {}
         self.run_loop = True
         self.sio: Optional[socketio.Client] = None
+        self.emit_buffer: List[Dict] = []
 
         self.session = self._configure_session()
 
@@ -160,7 +167,7 @@ class Client:
         """
         self.connector_functions[connector_id] = func
 
-    def __run(self, skill_id: str, connector_id: str, **kwargs):
+    def __run(self, skill_id: str, current_job_id: str, **kwargs):
         """Invoke a skill and get the result."""
         if not skill_id:
             raise ValueError("skill_id is required")
@@ -172,7 +179,7 @@ class Client:
                 "new_job_id": job_id,
                 "skill_id": skill_id,
                 "skill_payload": kwargs,
-                "connector_id": connector_id,
+                "job_id": current_job_id,
             },
         )
 
@@ -191,43 +198,83 @@ class Client:
             else:
                 time.sleep(1)
 
+    def __emit_safe(self, event: str, connector_id: str, data: Dict) -> None:
+        if self.sio.connected:
+            self.sio.emit(event, data)
+        else:
+            logging.info(
+                f"Connection down. Buffering data for '{event}' for connector {connector_id}."
+            )
+            self.emit_buffer.append(
+                {
+                    "data": data,
+                    "event": event,
+                    "connector_id": connector_id,
+                    "job_id": data["job_id"],
+                }
+            )
+
     def __execute_job(self, job_obj):
         job_id, connector_id, payload = (
             job_obj["job_id"],
             job_obj["connector_id"],
             job_obj["job_payload"],
         )
-        logging.info(f"<< Job for agent {connector_id} received: {payload}")
+        logging.info(f"<< Job {job_id} received for agent {connector_id}: {payload}")
         # Create an interface object that the connector function can use to interact with the Eezo server
+
         i: Interface = Interface(
             job_id=job_id,
             user_id=self.user_id,
             api_key=self.api_key,
-            connector_id=connector_id,
-            cb_send_message=lambda p: self.sio.emit("direct_message", p),
+            cb_send_message=lambda p: self.__emit_safe(
+                "direct_message", connector_id, p
+            ),
             cb_run=self.__run,
         )
 
         def execute():
             try:
-                result = self.connector_functions[connector_id](i, **payload)
-                self.sio.emit(
-                    "job_completed",
-                    JobCompleted(connector_id, result, True).to_dict(),
+                self.__emit_safe(
+                    "confirm_job_request",
+                    connector_id,
+                    {"connector_id": connector_id, "job_id": job_id},
                 )
+
+                try:
+                    result = self.connector_functions[connector_id](i, **payload)
+                except Exception as e:
+                    logging.info(
+                        f" ✖ Agent {connector_id} failed processing job {job_id}:\n{traceback.format_exc()}"
+                    )
+                    job_completed = JobCompleted(
+                        job_id=job_id,
+                        result=None,
+                        success=False,
+                        error=str(e),
+                        traceback=str(traceback.format_exc()),
+                        error_tag="Connector Error",
+                    ).to_dict()
+                    self.__emit_safe("job_completed", connector_id, job_completed)
+
+                    return
+
+                job_completed = JobCompleted(job_id, result, True).to_dict()
+
+                self.__emit_safe("job_completed", connector_id, job_completed)
             except Exception as e:
                 logging.info(
-                    f" ✖ Agent {connector_id} failed:\n{traceback.format_exc()}"
+                    f" ✖ Client error while connector {connector_id} was processing job {job_id}:\n{traceback.format_exc()}"
                 )
                 job_completed = JobCompleted(
-                    connector_id=connector_id,
+                    job_id=job_id,
                     result=None,
                     success=False,
                     error=str(e),
                     traceback=str(traceback.format_exc()),
-                    error_tag="Connector error",
-                )
-                self.sio.emit("job_completed", job_completed.to_dict())
+                    error_tag="Client Error",
+                ).to_dict()
+                self.__emit_safe("job_completed", connector_id, job_completed)
 
         self.executor.submit(execute)
 
@@ -237,17 +284,6 @@ class Client:
         try:
             self.observer.schedule(RestartHandler(), ".", recursive=False)
             self.observer.start()
-            # self.futures = []
-
-            # for connector_id, func in self.connector_functions.items():
-            #     c = Connector(
-            #         self.api_key, connector_id, func, self.job_responses, self.logger
-            #     )
-            #     c.authenticate()
-            #     self.futures.append(self.executor.submit(c.connect))
-
-            # for future in self.futures:
-            #     future.result()
 
             self.sio = socketio.Client(
                 reconnection_attempts=0,
@@ -268,8 +304,6 @@ class Client:
                         "key": self.api_key,
                     },
                 )
-                for connector_id in connector_ids:
-                    logging.info(f" ✔ Agent {connector_id} \033[32mconnected\033[0m")
 
             if not self.auth_token:
                 raise Exception("Not authenticated")
@@ -287,6 +321,26 @@ class Client:
 
             self.sio.on("token_expired", lambda: self.authenticate())
             self.sio.on("auth_error", auth_error)
+
+            def connector_online(payload):
+                logging.info(
+                    f" ✔ Agent {payload['connector_id']} \033[32mconnected\033[0m"
+                )
+
+                # Check for buffered messages for this connector
+                removed_items = []
+                for item in self.emit_buffer:
+                    if item["connector_id"] == payload["connector_id"]:
+                        logging.info(
+                            f">> Sending buffered message for job {item['job_id']} to '{item['event']}'"
+                        )
+                        self.sio.emit(item["event"], item["data"])
+                        removed_items.append(item)
+
+                for item in removed_items:
+                    self.emit_buffer.remove(item)
+
+            self.sio.on("connector_online", connector_online)
 
             def disconnect():
                 for connector_id in self.connector_functions:
@@ -327,9 +381,6 @@ class Client:
         except KeyboardInterrupt:
             pass
         finally:
-            # for future in self.futures:
-            #     future.cancel()
-            # self.executor.shutdown(wait=False)
             self.observer.stop()
 
     def _request(

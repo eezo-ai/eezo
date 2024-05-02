@@ -43,7 +43,7 @@ class StateProxy:
 
     def __getitem__(self, key: str) -> Any:
         """Get an item from the state by key."""
-        return self._state.get(key, None)
+        return self._state[key]
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set an item in the state."""
