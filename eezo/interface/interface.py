@@ -102,4 +102,4 @@ class Interface:
         This method utilizes the `_run` callback to execute the agent or skill identified by `agent_id`
         with the given keyword arguments.
         """
-        return self._run(skill_id=agent_id, connector_id=self.connector_id, **kwargs)
+        return self._run(skill_id=agent_id, current_job_id=self.job_id, **kwargs)

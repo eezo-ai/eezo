@@ -10,93 +10,91 @@ from eezo import Eezo
 
 e = Eezo(logger=True)
 
-# time.sleep(1)
+time.sleep(1)
 
-# e = Eezo(logger=True)
-
-
-# e.load_state()
-
-# print(e.state)
-# print(e.state["test"])
-# print(e.state.get("test"))
-# try:
-#     print(e.state["asd"])
-# except KeyError as e:
-#     print("State error test", e)
+e = Eezo(logger=True)
 
 
-# e.state["test"] = e.state.get("test", 0) + 1
-# m = e.new_message(
-#     eezo_id=os.environ["DEMO_EEZO_ID"],
-#     thread_id=os.environ["DEMO_THREAD_ID"],
-#     context="test",
-# )
-# m.add("text", text=f"State: {e.state['test']}")
-# m.notify()
+e.load_state()
 
-# e.save_state()
+print(e.state)
+print(e.state["test"])
+print(e.state.get("test"))
+try:
+    print(e.state["asd"])
+except KeyError as error:
+    print("State error test", error)
 
-# agents = e.get_agents()
-# for agent in agents.agents:
-#     print("--------------------------------------------------")
-#     print(agent.id)
-#     print(agent.name)
-#     print(agent.description)
-#     print(agent.status)
-#     print(agent.properties_schema)
-#     print(agent.properties_required)
-#     print(agent.return_schema)
-#     print(agent.input_model)
-#     print(agent.output_model)
-#     print()
-#     print(agent.is_online())
-#     print(agent.to_dict())
-#     print("--------------------------------------------------")
+e.state["test"] = e.state.get("test", 0) + 1
 
-# agent = e.get_agent("632f7b38-5982-4e6e-ab99-6468d37e4a64")
-# print("--------------------------------------------------")
-# print(agent.id)
-# print(agent.name)
-# print(agent.description)
-# print(agent.status)
-# print(agent.properties_schema)
-# print(agent.properties_required)
-# print(agent.return_schema)
-# print(agent.input_model)
-# print(agent.output_model)
-# print()
-# print(agent.is_online())
-# print(agent.to_dict())
-# print(agent.llm_string())
-# print("--------------------------------------------------")
+m = e.new_message(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id=os.environ["DEMO_THREAD_ID"],
+    context="test",
+)
+m.add("text", text=f"State: {e.state['test']}")
+m.notify()
 
-# m = e.new_message(
-#     eezo_id=os.environ["DEMO_EEZO_ID"],
-#     thread_id=os.environ["DEMO_THREAD_ID"],
-#     context="test",
-# )
+e.save_state()
 
-# m.add("text", text="Hello, world!")
-# m.notify()
+agents = e.get_agents()
+for agent in agents.agents:
+    print("--------------------------------------------------")
+    print(agent.id)
+    print(agent.name)
+    print(agent.description)
+    print(agent.status)
+    print(agent.properties_schema)
+    print(agent.properties_required)
+    print(agent.return_schema)
+    print(agent.input_model)
+    print(agent.output_model)
+    print()
+    print(agent.is_online())
+    print(agent.to_dict())
+    print("--------------------------------------------------")
+
+agent = e.get_agent("632f7b38-5982-4e6e-ab99-6468d37e4a64")
+print("--------------------------------------------------")
+print(agent.id)
+print(agent.name)
+print(agent.description)
+print(agent.status)
+print(agent.properties_schema)
+print(agent.properties_required)
+print(agent.return_schema)
+print(agent.input_model)
+print(agent.output_model)
+print()
+print(agent.is_online())
+print(agent.to_dict())
+print(agent.llm_string())
+print("--------------------------------------------------")
+
+m = e.new_message(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id=os.environ["DEMO_THREAD_ID"],
+    context="test",
+)
+
+m.add("text", text="Hello, world!")
+m.notify()
 
 
-# time.sleep(3)
+time.sleep(3)
 
-# m = e.update_message(m.id)
-# m.add("text", text="Hello, world! Updated!")
-# m.notify()
+m = e.update_message(m.id)
+m.add("text", text="Hello, world! Updated!")
+m.notify()
 
-# time.sleep(3)
+time.sleep(3)
 
-# e.delete_message(m.id)
+e.delete_message(m.id)
 
 
 def invoke(c, num_executions):
     def invoke_query(i):
-        return c.invoke(
-            os.environ["DEMO_AGENT_ID_1"], query=f"AI no code platforms {i}"
-        )
+        return c.invoke(os.environ["DEMO_AGENT_ID_1"], query=f"--- {i}")
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [executor.submit(invoke_query, i) for i in range(num_executions)]
@@ -111,8 +109,6 @@ def chart_demo(c, **kwargs):
     print("Chart demo")
     m = c.new_message()
     m.add("text", text=f"Hello, world 1. Query: {kwargs.get('query')}")
-    print("sleeping...")
-    time.sleep(5)
     m.add(
         "chart",
         chart_type="candlestick",
@@ -122,7 +118,7 @@ def chart_demo(c, **kwargs):
         chart_title="Example chart",
     )
     m.notify()
-    return {"status": "success", "test": "test"}
+    return {"status": "success", "test": f"test {kwargs.get('query')}"}
 
 
 @e.on(os.environ["DEMO_AGENT_ID_2"])
@@ -136,7 +132,7 @@ def invoke_demo(c, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     m.notify()
 
-    results = invoke(c, 3)
+    results = invoke(c, 20)
     m.add("text", text=f"Result from Agent 1: {results}")
     m.notify()
 

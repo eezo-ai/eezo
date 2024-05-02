@@ -1,1 +1,1 @@
-from .eezo import AsyncEezo, Eezo
+from .eezo import Eezo

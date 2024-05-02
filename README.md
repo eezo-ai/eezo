@@ -57,14 +57,6 @@ pip install -r requirements.txt
 
 Ensure everything is set up correctly by running the tests.
 
-### Asynchronous Client
-
-Run the asynchronous client tests with:
-
-```sh
-python test_async_client.py
-```
-
 ### Synchronous Client
 
 Run the synchronous client tests with:
