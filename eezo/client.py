@@ -311,6 +311,7 @@ class Client:
             def auth_error(message: str):
                 logging.info(f" ✖ Authentication failed: {message}")
                 self.run_loop = False
+                self.sio.disconnect()
 
             # Both functions have to address the right connector
             self.sio.on("job_request", lambda p: self.__execute_job(p))
