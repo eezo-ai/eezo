@@ -107,6 +107,10 @@ class Agent(BaseModel):
         data["output_model"] = output_model
         super().__init__(**data)
 
+        # The agent name is often used for pydantic model names.
+        # These names are not allowed to have spaces or special characters.
+        self.name = ModelFactory.sanitize_name(self.name)
+
     def to_dict(self) -> Dict[str, Any]:
         """Converts the instance of Agent to a dictionary representation.
 
