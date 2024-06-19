@@ -59,6 +59,14 @@ class Message:
         self.interface.append(component_dict)
         return component_dict["component"]
 
+    def add_new_line(self) -> None:
+        """
+        Adds a new line component to the message.
+
+        This method is a convenience function that adds a new line component to the message.
+        """
+        return self.add("text", text=" \n ")
+
     def remove(self, _id: str) -> None:
         """
         Removes a component from the message based on its unique identifier.

@@ -290,18 +290,22 @@ self.message.add("youtube_video", video_id="xyz")
             )
 
     def __execute_job(self, job_obj):
-        job_id, connector_id, payload = (
+        job_id, connector_id, payload, environment_variables = (
             job_obj["job_id"],
             job_obj["connector_id"],
             job_obj["job_payload"],
+            job_obj["environment_variables"],
         )
-        logging.info(f"<< Job {job_id} received for agent {connector_id}: {payload}")
+        logging.info(
+            f"<< Job {job_id} received for agent {connector_id} - payload: {payload} - env_vars: {environment_variables}"
+        )
         # Create an interface object that the connector function can use to interact with the Eezo server
 
         i: Interface = Interface(
             job_id=job_id,
             user_id=self.user_id,
             api_key=self.api_key,
+            environment_variables=environment_variables,
             cb_send_message=lambda p: self.__emit_safe(
                 "direct_message", connector_id, p
             ),

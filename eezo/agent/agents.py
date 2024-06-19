@@ -51,6 +51,7 @@ class Agents:
             status=agent_data["status"],
             properties_schema=agent_data["properties_schema"],
             properties_required=agent_data["properties_required"],
+            environment_variables=agent_data["environment_variables"],
             return_schema=agent_data["return_schema"],
         )
         self.agents.append(agent)

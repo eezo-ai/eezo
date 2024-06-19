@@ -10,6 +10,7 @@ class Interface:
         job_id: Identifier for the specific job this interface is associated with.
         user_id: User identifier for state and message association.
         api_key: API key for authorization purposes.
+        environment_variables: Dictionary of environment variables for the job.
         send_message: Callback function to send messages.
         _run: Private callback function to execute skills or agents.
     """
@@ -19,6 +20,7 @@ class Interface:
         job_id: str,
         user_id: str,
         api_key: str,
+        environment_variables: Dict[str, Any],
         cb_send_message: Callable[[Dict[str, Any]], Any],
         cb_run: Callable[..., Any],
     ):
@@ -29,6 +31,7 @@ class Interface:
             job_id: A unique identifier for the job to which this interface pertains.
             user_id: A unique identifier for the user who is associated with this job.
             api_key: A string that represents the API key for authentication.
+            environment_variables: A dictionary of environment variables for the job.
             cb_send_message: A callback function that is used to send messages.
             cb_run: A callback function that is used to execute agents or skills.
 
@@ -40,6 +43,7 @@ class Interface:
         self.message: Optional[Message] = None
         self.user_id = user_id
         self.api_key = api_key
+        self.environment_variables = environment_variables
         self.send_message = cb_send_message
         self._run = cb_run
 

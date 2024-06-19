@@ -75,6 +75,7 @@ class Agent(BaseModel):
         status (str): The current operational status of the agent (e.g., 'active', 'inactive', 'training').
         properties_schema (Dict[str, Any]): A dictionary defining the properties that an agent's configuration can include.
         properties_required (List[str]): A list of property names that are required for the agent's configuration.
+        environment_variables (Dict[str, Any]): A dictionary defining the environment variables that the agent requires.
         return_schema (Dict[str, Any]): A dictionary defining the structure of data the agent returns after processing.
 
     Methods:
@@ -89,6 +90,7 @@ class Agent(BaseModel):
     status: str
     properties_schema: Dict[str, Any]
     properties_required: List[str]
+    environment_variables: Dict[str, Any]
     return_schema: Dict[str, Any]
 
     def __init__(self, **data: Any):
@@ -116,7 +118,7 @@ class Agent(BaseModel):
 
         This can be particularly useful when you need to serialize the Agent instance to JSON,
         send it across a network, or save it to a database. The dictionary will include the
-        id, name, description, status, properties_schema, properties_required, and return_schema of the agent.
+        id, name, description, status, properties_schema, properties_required, environment_variables, and return_schema of the agent.
 
         Returns:
             Dict[str, Any]: The dictionary representation of the agent.
@@ -128,6 +130,7 @@ class Agent(BaseModel):
             "status": self.status,
             "properties_schema": self.input_model.model_json_schema(),
             "properties_required": self.output_model.model_json_schema(),
+            "environment_variables": self.environment_variables,
             "return_schema": self.return_schema,
         }
 
@@ -191,6 +194,10 @@ class Agent(BaseModel):
         else:
             formatted_properties_required = "None"
 
+        print(type(self.environment_variables))
+
+        formatted_environment_variables = format_dict(self.environment_variables)
+
         return f"""
 Agent ID: {self.id}
 Name: {self.name}
@@ -198,5 +205,7 @@ Description: {self.description}
 Status: {self.status}
 Properties Schema: {formatted_properties_schema}
 Properties Required: {formatted_properties_required}
+Environment Variables: 
+{formatted_environment_variables}
 Return Schema: {formatted_return_schema}
 """
