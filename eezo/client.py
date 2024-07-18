@@ -2,20 +2,23 @@ from .errors import AuthorizationError, RequestError, ResourceNotFoundError
 from typing import Optional, Callable, Dict, List, Any
 from requests.packages.urllib3.util.retry import Retry
 from watchdog.events import FileSystemEventHandler
-from .interface.interface import Interface
+from .interface.context import Context
+from .interface.components import component_api_json_description
 from requests.adapters import HTTPAdapter
-from .interface.interface import Message
+from .interface.context import Message
 from watchdog.observers import Observer
 from .agent import Agents, Agent
 
 import concurrent.futures
 import socketio
+import warnings
 import requests
 import logging
 import sys
 import time
 import uuid
 import traceback
+import json
 import os
 
 from .state import StateProxy
@@ -36,8 +39,11 @@ CREATE_STATE_ENDPOINT = SERVER + "/v1/create-state/"
 READ_STATE_ENDPOINT = SERVER + "/v1/read-state/"
 UPDATE_STATE_ENDPOINT = SERVER + "/v1/update-state/"
 
+CREATE_AGENT_ENDPOINT = SERVER + "/v1/create-agent/"
 GET_AGENTS_ENDPOINT = SERVER + "/v1/get-agents/"
 GET_AGENT_ENDPOINT = SERVER + "/v1/get-agent/"
+DELETE_AGENT_ENDPOINT = SERVER + "/v1/delete-agent/"
+UPDATE_AGENT_ENDPOINT = SERVER + "/v1/update-agent/"
 
 
 class RestartHandler(FileSystemEventHandler):
@@ -74,6 +80,11 @@ class JobCompleted:
         }
 
 
+class EnvironmentVariable:
+    key: str
+    value: str
+
+
 class Client:
     def __init__(self, api_key: Optional[str] = None, logger: bool = False) -> None:
         """Initialize the Client with an optional API key and a logger flag.
@@ -85,18 +96,23 @@ class Client:
         Raises:
             ValueError: If api_key is None after checking the environment.
         """
-        self.connector_functions: Dict[str, Callable] = {}
+        self.api_key: str = (
+            api_key if api_key is not None else os.getenv("EEZO_API_KEY")
+        )
+        if not self.api_key:
+            raise ValueError("Eezo api_key is required")
+
+        self.agent_registry: Dict[str, Callable] = {}
         self.futures: List[concurrent.futures.Future] = []
         self.executor: concurrent.futures.ThreadPoolExecutor = (
             concurrent.futures.ThreadPoolExecutor()
         )
         self.observer = Observer()
-        self.api_key: str = (
-            api_key if api_key is not None else os.getenv("EEZO_API_KEY")
-        )
+
         self.logger: bool = logger
         if self.logger:
             logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
         self.state_was_loaded = False
         self.user_id: Optional[str] = os.environ.get("EEZO_USER_ID", None)
         self.auth_token: Optional[str] = os.environ.get("EEZO_TOKEN", None)
@@ -116,92 +132,21 @@ class Client:
         else:
             logging.info("Already authenticated")
 
-        if not self.api_key:
-            raise ValueError("Eezo api_key is required")
-
         self._state_proxy: StateProxy = StateProxy(self)
 
     @staticmethod
-    def get_ui_component_api_as_string() -> str:
-        return """
-TEXT:
-Parameters:
-- text: str (The main text content for this component)
-
-Example:
-```python
-self.message.add("text", text="Hello World!")
-```
-
-CHART:
-Parameters:
-- chart_type: str (Available types: ["donut","pie","heatmap","radar","polarArea","radialBar","bar-horizontal","bar-stacked","bar","line-area","line","candlestick","treemap","scatter"])
-- name: str (Legend for the chart)
-- xaxis: List[str] (X-axis labels)
-- chart_title: str (Title of the chart)
-
-Depending on the chart type, the format of 'data' varies:
-
-# Data for donut, pie, treemap:
-```python
-data = [10, 20, 30]  # List of datapoints
-```
-
-# Data for candlestick:
-```python
-data = [
-    [open1, high1, low1, close1],
-    [open2, high2, low2, close2],
-    ...
-]  # List of [open, high, low, close]
-```
-
-# Data for scatter:
-```python
-data = [{
-    "data": [[x1, y1], [x2, y2], ...],
-    "name": "Legend for scatter data",
-}]
-```
-
-# Data for all others:
-```python
-data = [{
-    "data": [10, 20, 30],
-    "name": "Legend for data series",
-}]
-```
-
-Example usage:
-```python
-self.message.add('chart', chart_type="bar", data=[{"data": [10, 20, 30], "name": "Monthly Sales"}], name="Sales", xaxis=["Jan", "Feb", "Mar"], chart_title="Monthly Sales Overview")
-```
-
-IMAGE:
-Parameters:
-- url: str (The URL of the image)
-
-Example:
-```python
-self.message.add("image", url="https://example.com/image.jpg")
-```
-
-YOUTUBE VIDEO:
-Parameters:
-- video_id: str (The ID of the video)
-
-Example:
-```python
-self.message.add("youtube_video", video_id="xyz")
-```
-"""
+    def component_api_description() -> str:
+        """
+        Returns the UI component API as a string.
+        """
+        return component_api_json_description
 
     @staticmethod
     def _configure_session() -> requests.Session:
         """
         Configures and returns a requests.Session with automatic retries on certain status codes.
 
-        This static method sets up the session object which the Interface will use for all HTTP
+        This static method sets up the session object which the Context will use for all HTTP
         communications. It adds automatic retries for the HTTP status codes in the `status_forcelist`,
         with a total of 5 retries and a backoff factor of 1.
         """
@@ -215,11 +160,110 @@ self.message.add("youtube_video", video_id="xyz")
         session.mount("https://", HTTPAdapter(max_retries=retries))
         return session
 
-    def on(self, connector_id: str) -> Callable:
-        """Decorator to register a connector function.
+    def create_agent(
+        self,
+        agent_id: str,
+        description: str,
+        input_schema: Optional[dict] = {},
+        output_schema: Optional[dict] = {},
+        environment_variables: Optional[List[EnvironmentVariable]] = [],
+    ) -> Agent:
+        """Create a new agent with the given agent_id
 
         Args:
-            connector_id (str): The identifier for the connector.
+            agent_id (str): The ID for the new agent.
+            description (str): Describes when to activate the agent.
+            input_schema (Optional[dict]): Needs to be a valid JSON schema.
+            output_schema (Optional[dict]): Needs to be a valid JSON schema.
+            environment_variables (Optional[List[EnvironmentVariable]]): A list of key-value pairs like:
+                [{"key": "key", "value": "value"}]
+
+        Returns:
+            Agent: The newly created agent object.
+        """
+        Agent.validate_json_schema(input_schema)
+        Agent.validate_json_schema(output_schema)
+        Agent.validate_environment_variables(environment_variables)
+
+        response = self._request(
+            "POST",
+            CREATE_AGENT_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "agent_id": agent_id,
+                "description": description,
+                "input_schema": input_schema,
+                "output_schema": output_schema,
+                "environment_variables": environment_variables,
+            },
+        )
+        if response.get("error"):
+            raise Exception(response.get("error"))
+        agent_dict = response["data"]
+        return Agent(**agent_dict)
+
+    def update_agent(
+        self,
+        agent_id: str,
+        description: Optional[str] = "",
+        input_schema: Optional[dict] = {},
+        output_schema: Optional[dict] = {},
+        environment_variables: Optional[List[EnvironmentVariable]] = [],
+    ) -> Agent:
+        """Update an existing agent with the given ID.
+
+        Args:
+            agent_id (str): The ID of the agent to update.
+            description (Optional[str]): Describes when to activate the agent.
+            input_schema (Optional[dict]): Needs to be a valid JSON schema.
+            output_schema (Optional[dict]): Needs to be a valid JSON schema.
+            environment_variables (Optional[List[EnvironmentVariable]]): A list of key-value pairs like:
+                [{"key": "key", "value": "value"}]
+
+        Returns:
+            Agent: The updated agent object.
+        """
+        Agent.validate_json_schema(input_schema)
+        Agent.validate_json_schema(output_schema)
+        Agent.validate_environment_variables(environment_variables)
+
+        response = self._request(
+            "POST",
+            UPDATE_AGENT_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "agent_id": agent_id,
+                "description": description,
+                "input_schema": input_schema,
+                "output_schema": output_schema,
+                "environment_variables": environment_variables,
+            },
+        )
+        if response.get("error"):
+            raise Exception(response.get("error"))
+        agent_dict = response["data"]
+        return Agent(**agent_dict)
+
+    def delete_agent(self, agent_id: str) -> None:
+        """Delete an agent by its ID.
+
+        Args:
+            agent_id (str): The ID of the agent to delete.
+        """
+        self._request(
+            "POST",
+            DELETE_AGENT_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "agent_id": agent_id,
+            },
+        )
+
+    def on(self, agent_id: str) -> Callable:
+        """Decorator to register an agent
+
+        Args:
+            agent_id (str): The identifier for the agent.
 
         Returns:
             Callable: The decorator function.
@@ -228,37 +272,58 @@ self.message.add("youtube_video", video_id="xyz")
         def decorator(func: Callable) -> Callable:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func)} instead")
-            self.add_connector(connector_id, func)
+            self.register_agent(agent_id, func)
             return func
 
         return decorator
 
-    def add_connector(self, connector_id: str, func: Callable) -> None:
-        """Add a connector function to the client.
+    def add_connector(self, agent_id: str, func: Callable) -> None:
+        """Add an agent function to the client.
 
         Args:
-            connector_id (str): The identifier for the connector.
-            func (Callable): The connector function to add.
+            agent_id (str): The identifier for the agent.
+            func (Callable): The agent to add.
         """
-        self.connector_functions[connector_id] = func
+        warnings.warn(
+            "The 'add_connector' function is deprecated and will be removed in a future version. "
+            "Please use 'register_agent' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.agent_registry[agent_id] = func
 
-    def __run(self, skill_id: str, current_job_id: str, **kwargs):
+    def register_agent(self, agent_id: str, func: Callable) -> None:
+        """Register agent.
+
+        Args:
+            agent_id (str): The identifier for the agent.
+            func (Callable): The agent to add.
+        """
+        self.agent_registry[agent_id] = func
+
+    def _run(
+        self,
+        agent_id: str,
+        current_job_id: str,
+        wait_for_response: bool = True,
+        **kwargs,
+    ):
         """Invoke a skill and get the result."""
-        if not skill_id:
-            raise ValueError("skill_id is required")
+        if not agent_id:
+            raise ValueError("agent_id is required")
 
         job_id = str(uuid.uuid4())
         self.sio.emit(
             "invoke_skill",
             {
                 "new_job_id": job_id,
-                "skill_id": skill_id,
+                "agent_id": agent_id,
                 "skill_payload": kwargs,
                 "job_id": current_job_id,
             },
         )
 
-        while True:
+        while True and wait_for_response:
             if job_id in self.job_responses:
                 response = self.job_responses.pop(job_id)
 
@@ -273,58 +338,52 @@ self.message.add("youtube_video", video_id="xyz")
             else:
                 time.sleep(1)
 
-    def __emit_safe(self, event: str, connector_id: str, data: Dict) -> None:
+    def _emit_safe(self, event: str, agent_id: str, data: Dict) -> None:
         if self.sio.connected:
             self.sio.emit(event, data)
         else:
             logging.info(
-                f"Connection down. Buffering data for '{event}' for connector {connector_id}."
+                f"Connection down. Buffering job result for '{event}' for agent {agent_id}."
             )
             self.emit_buffer.append(
                 {
                     "data": data,
                     "event": event,
-                    "connector_id": connector_id,
+                    "agent_id": agent_id,
                     "job_id": data["job_id"],
                 }
             )
 
-    def __execute_job(self, job_obj):
-        job_id, connector_id, payload, environment_variables = (
+    def _execute_job(self, job_obj):
+        job_id, agent_uid, agent_id, payload, environment_variables = (
             job_obj["job_id"],
-            job_obj["connector_id"],
+            job_obj["agent_uid"],
+            job_obj["agent_id"],
             job_obj["job_payload"],
             job_obj["environment_variables"],
         )
         logging.info(
-            f"<< Job {job_id} received for agent {connector_id} - payload: {payload} - env_vars: {environment_variables}"
+            f"<< Job {job_id} received for agent {agent_id} - payload: {payload} - env_vars: {environment_variables}"
         )
-        # Create an interface object that the connector function can use to interact with the Eezo server
 
-        i: Interface = Interface(
+        c: Context = Context(
             job_id=job_id,
             user_id=self.user_id,
             api_key=self.api_key,
             environment_variables=environment_variables,
-            cb_send_message=lambda p: self.__emit_safe(
-                "direct_message", connector_id, p
-            ),
-            cb_run=self.__run,
+            cb_send_message=lambda p: self._emit_safe("direct_message", agent_id, p),
+            cb_run=self._run,
         )
 
         def execute():
             try:
-                self.__emit_safe(
-                    "confirm_job_request",
-                    connector_id,
-                    {"connector_id": connector_id, "job_id": job_id},
-                )
+                self._emit_safe("confirm_job_request", agent_id, {"job_id": job_id})
 
                 try:
-                    result = self.connector_functions[connector_id](i, **payload)
+                    result = self.agent_registry[agent_id](c, **payload)
                 except Exception as e:
                     logging.info(
-                        f" ✖ Agent {connector_id} failed processing job {job_id}:\n{traceback.format_exc()}"
+                        f" ✖ Agent {agent_id} failed processing job {job_id}:\n{traceback.format_exc()}"
                     )
                     job_completed = JobCompleted(
                         job_id=job_id,
@@ -332,18 +391,18 @@ self.message.add("youtube_video", video_id="xyz")
                         success=False,
                         error=str(e),
                         traceback=str(traceback.format_exc()),
-                        error_tag="Connector Error",
+                        error_tag="Agent Error",
                     ).to_dict()
-                    self.__emit_safe("job_completed", connector_id, job_completed)
+                    self._emit_safe("job_completed", agent_id, job_completed)
 
                     return
 
                 job_completed = JobCompleted(job_id, result, True).to_dict()
 
-                self.__emit_safe("job_completed", connector_id, job_completed)
+                self._emit_safe("job_completed", agent_id, job_completed)
             except Exception as e:
                 logging.info(
-                    f" ✖ Client error while connector {connector_id} was processing job {job_id}:\n{traceback.format_exc()}"
+                    f" ✖ Client error while agent {agent_id} was processing job {job_id}:\n{traceback.format_exc()}"
                 )
                 job_completed = JobCompleted(
                     job_id=job_id,
@@ -353,7 +412,7 @@ self.message.add("youtube_video", video_id="xyz")
                     traceback=str(traceback.format_exc()),
                     error_tag="Client Error",
                 ).to_dict()
-                self.__emit_safe("job_completed", connector_id, job_completed)
+                self._emit_safe("job_completed", agent_id, job_completed)
 
         self.executor.submit(execute)
 
@@ -374,12 +433,12 @@ self.message.add("youtube_video", video_id="xyz")
 
             @self.sio.event
             def connect():
-                connector_ids = list(self.connector_functions.keys())
+                agent_ids = list(set(self.agent_registry.keys()))
                 self.sio.emit(
                     "authenticate",
                     {
                         "token": self.auth_token,
-                        "cids": connector_ids,
+                        "agent_ids": agent_ids,
                         "key": self.api_key,
                     },
                 )
@@ -392,8 +451,8 @@ self.message.add("youtube_video", video_id="xyz")
                 self.run_loop = False
                 self.sio.disconnect()
 
-            # Both functions have to address the right connector
-            self.sio.on("job_request", lambda p: self.__execute_job(p))
+            # Both functions have to address the right agent
+            self.sio.on("job_request", lambda p: self._execute_job(p))
 
             self.sio.on(
                 "job_response", lambda p: self.job_responses.update({p["id"]: p})
@@ -402,15 +461,13 @@ self.message.add("youtube_video", video_id="xyz")
             self.sio.on("token_expired", lambda: self.authenticate())
             self.sio.on("auth_error", auth_error)
 
-            def connector_online(payload):
-                logging.info(
-                    f" ✔ Agent {payload['connector_id']} \033[32mconnected\033[0m"
-                )
+            def send_buffered_jobs(payload):
+                logging.info(f" ✔ Agent {payload['agent_id']} \033[32mconnected\033[0m")
 
-                # Check for buffered messages for this connector
+                # Check for buffered messages for this agent
                 removed_items = []
                 for item in self.emit_buffer:
-                    if item["connector_id"] == payload["connector_id"]:
+                    if item["agent_id"] == payload["agent_id"]:
                         logging.info(
                             f">> Sending buffered message for job {item['job_id']} to '{item['event']}'"
                         )
@@ -420,11 +477,12 @@ self.message.add("youtube_video", video_id="xyz")
                 for item in removed_items:
                     self.emit_buffer.remove(item)
 
-            self.sio.on("connector_online", connector_online)
+            # When the server notifies that an agent is online, send buffered jobs
+            self.sio.on("agent_online", send_buffered_jobs)
 
             def disconnect():
-                for connector_id in self.connector_functions:
-                    logging.info(f" ✖ Agent {connector_id} \033[31mdisconnected\033[0m")
+                for agent_id in self.agent_registry:
+                    logging.info(f" ✖ Agent {agent_id} \033[31mdisconnected\033[0m")
 
             self.sio.on("disconnect", lambda: disconnect())
 
@@ -489,7 +547,12 @@ self.message.add("youtube_video", video_id="xyz")
             return response.json()
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code
+
+            # Parse error message
             error_message = e.response.text
+            if "detail" in error_message:
+                error_message = json.loads(error_message)["detail"]
+
             if status in [401, 403]:
                 logging.error(
                     "Eezo \033[31mauthorization error\033[0m. Check your API key."
@@ -504,13 +567,8 @@ self.message.add("youtube_video", video_id="xyz")
                     logging.error(f"Resource not found: \033[31m{error_message}\033[0m")
                     raise ResourceNotFoundError(error_message) from e
             else:
-                logging.error(
-                    f"Unexpected error: \033[31m{error_message} (status code: {status})\033[0m"
-                )
-                raise RequestError(f"Unexpected error: {e.response.content}") from e
-        except Exception as e:
-            logging.error(f"Unexpected error: \033[31m{e}\033[0m")
-            raise RequestError(f"Unexpected error: {e}") from e
+                logging.error(f"Error: \033[31m{error_message}\033[0m")
+                raise RequestError(f"Error: {error_message}") from e
 
     def new_message(
         self, eezo_id: str, thread_id: str, context: str = "direct_message"
@@ -624,14 +682,14 @@ self.message.add("youtube_video", video_id="xyz")
 
         return agents
 
-    def get_agent(self, agent_id: str) -> Agent:
+    def get_agent(self, agent_id: str) -> Agent | None:
         """Retrieve and return an agent by its ID.
 
         Args:
             agent_id (str): The ID of the agent to retrieve.
 
         Returns:
-            Agent: The agent object.
+            Agent: The agent object or None if not found.
 
         Raises:
             Exception: If the agent with the given ID is not found.
@@ -640,7 +698,10 @@ self.message.add("youtube_video", video_id="xyz")
             "POST", GET_AGENT_ENDPOINT, {"api_key": self.api_key, "agent_id": agent_id}
         )
         agent_dict = response["data"]
-        return Agent(**agent_dict)
+        if agent_dict:
+            return Agent(**agent_dict)
+        else:
+            return None
 
     def create_state(
         self, state_id: str, state: Optional[Dict[str, Any]] = None

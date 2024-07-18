@@ -6,19 +6,6 @@ class ModelFactory:
     """Factory for creating dynamic Pydantic models based on provided schemas and requirements."""
 
     @staticmethod
-    def sanitize_name(name: str) -> str:
-        """Sanitize and format names for consistent use in model names and tool identifiers."""
-        return (
-            name.replace(" ", "_")
-            .replace(".", "")
-            .replace(",", "")
-            .replace("?", "")
-            .replace("!", "")
-            .lower()
-            .strip()
-        )
-
-    @staticmethod
     def resolve_field_type(prop: Dict[str, Any], model_name: str = "Root") -> Type:
         """Resolve the Python type for a field property, recursively creating models for nested objects."""
         field_type = prop["type"]
@@ -69,69 +56,65 @@ class Agent(BaseModel):
     model specifications necessary for operation.
 
     Attributes:
-        id (str): A unique identifier for the agent.
-        name (str): A human-readable name for the agent.
+        agent_id (str): A unique identifier for the agent.
         description (str): A brief description of the agent and its purpose or functionality.
         status (str): The current operational status of the agent (e.g., 'active', 'inactive', 'training').
-        properties_schema (Dict[str, Any]): A dictionary defining the properties that an agent's configuration can include.
+        input_schema (Dict[str, Any]): A dictionary defining the properties that an agent's configuration can include.
         properties_required (List[str]): A list of property names that are required for the agent's configuration.
         environment_variables (Dict[str, Any]): A dictionary defining the environment variables that the agent requires.
-        return_schema (Dict[str, Any]): A dictionary defining the structure of data the agent returns after processing.
+        output_schema (Dict[str, Any]): A dictionary defining the structure of data the agent returns after processing.
 
     Methods:
         to_dict: Converts the Agent instance into a dictionary, primarily for serialization purposes.
     """
 
-    id: str
+    agent_id: str
     input_model: Type[BaseModel]
     output_model: Type[BaseModel]
-    name: str
     description: str
     status: str
-    properties_schema: Dict[str, Any]
+    input_schema: Dict[str, Any]
     properties_required: List[str]
     environment_variables: Dict[str, Any]
-    return_schema: Dict[str, Any]
+    output_schema: Dict[str, Any]
 
     def __init__(self, **data: Any):
         """Initialize an instance of Agent, creating input and output models based on provided schemas."""
+
         input_model = ModelFactory.create_dynamic_model(
-            ModelFactory.sanitize_name(data["name"]) + "_input",
-            data["properties_schema"],
+            data["agent_id"] + "_input",
+            data["input_schema"],
             data["properties_required"],
         )
         output_model = ModelFactory.create_dynamic_model(
-            ModelFactory.sanitize_name(data["name"]) + "_output",
-            data["return_schema"],
+            data["agent_id"] + "_output",
+            data["output_schema"],
             [],
         )
         data["input_model"] = input_model
         data["output_model"] = output_model
+        if not "environment_variables" in data:
+            data["environment_variables"] = {}
         super().__init__(**data)
-
-        # The agent name is often used for pydantic model names.
-        # These names are not allowed to have spaces or special characters.
-        self.name = ModelFactory.sanitize_name(self.name)
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts the instance of Agent to a dictionary representation.
 
         This can be particularly useful when you need to serialize the Agent instance to JSON,
         send it across a network, or save it to a database. The dictionary will include the
-        id, name, description, status, properties_schema, properties_required, environment_variables, and return_schema of the agent.
+        agent_id, description, status, input_schema, properties_required, environment_variables, and output_schema of the agent.
 
         Returns:
             Dict[str, Any]: The dictionary representation of the agent.
         """
         return {
-            "id": self.id,
-            "name": self.name,
+            "agent_id": self.agent_id,
             "description": self.description,
             "status": self.status,
-            "properties_schema": self.input_model.model_json_schema(),
+            "input_schema": self.input_model.model_json_schema(),
             "properties_required": self.output_model.model_json_schema(),
             "environment_variables": self.environment_variables,
-            "return_schema": self.return_schema,
+            "output_schema": self.output_schema,
         }
 
     def is_online(self) -> bool:
@@ -182,30 +165,71 @@ class Agent(BaseModel):
                     lines.append(current_line + f" {value}")
             return "\n".join(lines)
 
-        formatted_properties_schema = format_dict(self.input_model.model_json_schema())
-        if formatted_properties_schema != "None":
-            formatted_properties_schema = "\n" + formatted_properties_schema
-        formatted_return_schema = format_dict(self.output_model.model_json_schema())
-        if formatted_return_schema != "None":
-            formatted_return_schema = "\n" + formatted_return_schema
+        formatted_input_schema = format_dict(self.input_model.model_json_schema())
+        if formatted_input_schema != "None":
+            formatted_input_schema = "\n" + formatted_input_schema
+        formatted_output_schema = format_dict(self.output_model.model_json_schema())
+        if formatted_output_schema != "None":
+            formatted_output_schema = "\n" + formatted_output_schema
 
         if self.properties_required:
             formatted_properties_required = ", ".join(self.properties_required)
         else:
             formatted_properties_required = "None"
 
-        print(type(self.environment_variables))
-
         formatted_environment_variables = format_dict(self.environment_variables)
 
         return f"""
-Agent ID: {self.id}
-Name: {self.name}
+Agent ID: {self.agent_id}
 Description: {self.description}
 Status: {self.status}
-Properties Schema: {formatted_properties_schema}
+Properties Schema: {formatted_input_schema}
 Properties Required: {formatted_properties_required}
 Environment Variables: 
 {formatted_environment_variables}
-Return Schema: {formatted_return_schema}
+Return Schema: {formatted_output_schema}
 """
+
+    @staticmethod
+    def validate_json_schema(json_schema: dict) -> None:
+        """Validate a JSON schema to ensure it is properly formatted and can be used to create a Pydantic model.
+
+        Args:
+            json_schema (Dict[str, Any]): A JSON schema to validate.
+
+        Raises:
+            ValueError: If the JSON schema is invalid or contains unsupported types.
+        """
+        if not isinstance(json_schema, dict):
+            raise ValueError("JSON schema must be a dictionary.")
+
+        try:
+            ModelFactory.create_dynamic_model("temp", json_schema, [])
+        except Exception as e:
+            raise ValueError(f"Error validating JSON schema: {e}")
+
+    @staticmethod
+    def validate_environment_variables(env_vars: List[Dict[str, Any]]) -> None:
+        """Validate environment variables to ensure they are properly formatted and can be used by the agent.
+
+        Args:
+            env_vars (List[Dict[str, Any]]): A list of dictionaries representing environment variables.
+
+        Raises:
+            ValueError: If the environment variables are not a list of dicts that contain a key and a value field.
+        """
+        try:
+            if not isinstance(env_vars, list):
+                raise ValueError(
+                    "Environment variables must be a list of dictionaries."
+                )
+
+            if not all(
+                isinstance(item, dict) and "key" in item and "value" in item
+                for item in env_vars
+            ):
+                raise ValueError(
+                    "Environment variables must be a list of dictionaries with 'key' and 'value' keys."
+                )
+        except Exception as e:
+            raise ValueError(f"Error validating environment variables: {e}")

@@ -1,2 +1,2 @@
-from .interface import Interface
+from .context import Context
 from .message import Message

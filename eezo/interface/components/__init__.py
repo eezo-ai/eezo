@@ -10,3 +10,7 @@ components = {
     "image": ComponentImage,
     "youtube_video": ComponentYouTubeVideo,
 }
+
+component_api_json_description = ""
+for key, component_class in components.items():
+    component_api_json_description += component_class.json_description() + "\n"

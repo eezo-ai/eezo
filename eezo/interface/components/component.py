@@ -7,3 +7,7 @@ class Component:
 
     def to_dict(self):
         raise NotImplementedError
+
+    @staticmethod
+    def json_description(self):
+        raise NotImplementedError

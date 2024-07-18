@@ -53,6 +53,6 @@ def invoke_demo(c, **kwargs):
 
 
 for i in range(20):
-    e.add_connector(os.environ["DEMO_AGENT_ID_2"], invoke_demo)
+    e.register_agent("demo-2", invoke_demo)
 
 e.connect()

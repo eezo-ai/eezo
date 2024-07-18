@@ -2,9 +2,9 @@ from typing import Any, Dict, Callable, Optional
 from .message import Message
 
 
-class Interface:
+class Context:
     """
-    Interface class for managing communications and state for a specific job identified by a job ID.
+    The Context class provides access to the job-specific state and messaging systems.
 
     Attributes:
         job_id: Identifier for the specific job this interface is associated with.
@@ -25,7 +25,7 @@ class Interface:
         cb_run: Callable[..., Any],
     ):
         """
-        Initialize the Interface with identifiers and callback functions.
+        Initialize the Context with identifiers and callback functions.
 
         Args:
             job_id: A unique identifier for the job to which this interface pertains.
@@ -35,7 +35,7 @@ class Interface:
             cb_send_message: A callback function that is used to send messages.
             cb_run: A callback function that is used to execute agents or skills.
 
-        The Interface class acts as a facilitator between the client's job-specific operations and the server's
+        The Context class acts as a facilitator between the client's job-specific operations and the server's
         state management and messaging systems. It encapsulates methods for message creation, notification,
         state retrieval, and invocation of external skills or agents.
         """
@@ -52,7 +52,7 @@ class Interface:
         Creates and returns a new message object with a notification callback attached.
 
         This method should be called when the client needs to create a new message to be sent.
-        It initializes a Message object and binds the `notify` method of the Interface as its
+        It initializes a Message object and binds the `notify` method of the Context as its
         notification callback function.
         """
         self.message = Message(notify=self.notify)
@@ -89,21 +89,45 @@ class Interface:
         The method delegates the operation to the `_run` callback, providing the required parameters.
         """
         return self._run(
-            skill_id="s_get_thread",
+            agent_id="s_get_thread",
             current_job_id=self.job_id,
+            wait_for_response=True,
             nr_of_messages=nr,
             to_string=to_string,
         )
 
     def invoke(self, agent_id: str, **kwargs: Any) -> Any:
         """
-        Invokes an agent or skill and returns its result.
+        Invokes an agent and returns its result.
 
         Args:
-            agent_id: A string identifier of the agent or skill to be invoked.
-            **kwargs: A variable number of keyword arguments that are passed to the agent or skill.
+            agent_id: A string identifier of the agent to be invoked.
+            **kwargs: A variable number of keyword arguments that are passed to the agent.
 
-        This method utilizes the `_run` callback to execute the agent or skill identified by `agent_id`
+        This method utilizes the `_run` callback to execute the agent identified by `agent_id`
         with the given keyword arguments.
         """
-        return self._run(skill_id=agent_id, current_job_id=self.job_id, **kwargs)
+        return self._run(
+            agent_id=agent_id,
+            current_job_id=self.job_id,
+            wait_for_response=True,
+            **kwargs
+        )
+
+    def invoke_async(self, agent_id: str, **kwargs: Any) -> None:
+        """
+        Triggers an agent without waiting for a response.
+
+        Args:
+            agent_id: A string identifier of the agent to be triggered.
+            **kwargs: A variable number of keyword arguments that are passed to the agent.
+
+        This method uses the `_run` callback to trigger the agent identified by `agent_id`
+        with the given keyword arguments.
+        """
+        self._run(
+            agent_id=agent_id,
+            current_job_id=self.job_id,
+            wait_for_response=False,
+            **kwargs
+        )

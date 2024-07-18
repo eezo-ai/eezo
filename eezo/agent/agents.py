@@ -13,7 +13,7 @@ class Agents:
 
     Methods:
         __init__: Constructs the `Agents` collection, optionally pre-populating it with agents.
-        __add_agent: Adds a new `Agent` instance to the collection based on provided data.
+        _add_agent: Adds a new `Agent` instance to the collection based on provided data.
         to_dict: Serializes the collection of `Agent` instances to a list of dictionaries.
     """
 
@@ -26,14 +26,15 @@ class Agents:
             the data required to initialize an `Agent` instance.
 
         Each dictionary in the `agents_data` list should have the keys that correspond to the properties
-        required to initialize an `Agent` instance, such as 'id', 'name', 'description', etc.
+        required to initialize an `Agent` instance, such as 'id' 'agent_id', 'description', etc.
         """
         self.agents: List[Agent] = []
         if agents_data:
             for agent_data in agents_data:
-                self.__add_agent(agent_data)
+                print(agent_data)
+                self._add_agent(agent_data)
 
-    def __add_agent(self, agent_data: Dict[str, Any]):
+    def _add_agent(self, agent_data: Dict[str, Any]):
         """
         Private method to add a new agent to the collection using the specified data.
 
@@ -44,17 +45,7 @@ class Agents:
             agent_data (Dict[str, Any]): A dictionary containing all necessary data to create an Agent instance.
             This includes identifiers, model schemas, descriptions, statuses, and other relevant properties.
         """
-        agent = Agent(
-            id=agent_data["id"],
-            name=agent_data["name"],
-            description=agent_data["description"],
-            status=agent_data["status"],
-            properties_schema=agent_data["properties_schema"],
-            properties_required=agent_data["properties_required"],
-            environment_variables=agent_data["environment_variables"],
-            return_schema=agent_data["return_schema"],
-        )
-        self.agents.append(agent)
+        self.agents.append(Agent(**agent_data))
 
     def to_dict(self) -> List[Dict[str, Any]]:
         """

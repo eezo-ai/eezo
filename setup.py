@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="eezo",
-    version="0.3.7",
-    description="Eezo enables you to build and supervise your AI agent workforce.",
+    version="0.4.0",
+    description="Eezo helps you to build and supervise your AI agent workforce.",
     author="Daniel Schoenbohm",
     author_email="daniel@eezo.ai",
     packages=find_packages(),
