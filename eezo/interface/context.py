@@ -1,6 +1,17 @@
 from typing import Any, Dict, Callable, Optional
 from .message import Message
 
+import os
+
+SERVER = "https://api-service-bofkvbi4va-ey.a.run.app"
+if os.environ.get("EEZO_DEV_MODE") == "True":
+    print("Running in dev mode")
+    SERVER = "http://localhost:8082"
+
+CREATE_MESSAGE_ENDPOINT = SERVER + "/v1/create-message/"
+
+GET_TREAD_ENDPOINT = SERVER + "/v1/get-thread/"
+
 
 class Context:
     """
@@ -20,9 +31,12 @@ class Context:
         job_id: str,
         user_id: str,
         api_key: str,
+        agent_id: str,
+        eezo_id: str,
+        thread_id: str,
         environment_variables: Dict[str, Any],
-        cb_send_message: Callable[[Dict[str, Any]], Any],
         cb_run: Callable[..., Any],
+        cb_rest_api: Callable[..., Any],
     ):
         """
         Initialize the Context with identifiers and callback functions.
@@ -31,8 +45,10 @@ class Context:
             job_id: A unique identifier for the job to which this interface pertains.
             user_id: A unique identifier for the user who is associated with this job.
             api_key: A string that represents the API key for authentication.
+            agent_id: A string that represents the agent ID.
+            eezo_id: A string that represents the eezo ID.
+            thread_id: A string that represents the thread ID.
             environment_variables: A dictionary of environment variables for the job.
-            cb_send_message: A callback function that is used to send messages.
             cb_run: A callback function that is used to execute agents or skills.
 
         The Context class acts as a facilitator between the client's job-specific operations and the server's
@@ -43,9 +59,12 @@ class Context:
         self.message: Optional[Message] = None
         self.user_id = user_id
         self.api_key = api_key
+        self.agent_id = agent_id
+        self.eezo_id = eezo_id
+        self.thread_id = thread_id
         self.environment_variables = environment_variables
-        self.send_message = cb_send_message
         self._run = cb_run
+        self._request = cb_rest_api
 
     def new_message(self) -> Message:
         """
@@ -70,12 +89,17 @@ class Context:
             raise Exception("Please create a message first")
 
         message_obj = self.message.to_dict()
-        self.send_message(
+        self._request(
+            "POST",
+            CREATE_MESSAGE_ENDPOINT,
             {
+                "api_key": self.api_key,
+                "thread_id": self.thread_id,
+                "eezo_id": self.eezo_id,
                 "message_id": message_obj["id"],
                 "interface": message_obj["interface"],
-                "job_id": self.job_id,
-            }
+                "context": self.agent_id,
+            },
         )
 
     def get_thread(self, nr: int = 5, to_string: bool = False) -> Any:
@@ -88,12 +112,16 @@ class Context:
 
         The method delegates the operation to the `_run` callback, providing the required parameters.
         """
-        return self._run(
-            agent_id="s_get_thread",
-            current_job_id=self.job_id,
-            wait_for_response=True,
-            nr_of_messages=nr,
-            to_string=to_string,
+        return self._request(
+            "POST",
+            GET_TREAD_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "thread_id": self.thread_id,
+                "eezo_id": self.eezo_id,
+                "to_string": to_string,
+                "number_of_messages": nr,
+            },
         )
 
     def invoke(self, agent_id: str, **kwargs: Any) -> Any:

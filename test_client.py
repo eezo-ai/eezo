@@ -13,22 +13,41 @@ e = Eezo(logger=True)
 agent = e.get_agent("this-agent-does-not-exist")
 print(agent)
 
-e.update_agent(
-    agent_id="assistent",
-    environment_variables=[{"key": 123, "value": "new_key"}],
-)
+try:
+    e.create_agent(
+        agent_id="demo-1",
+        description="Invoke when user says demo 1 or demo agent 1",
+        environment_variables=[{"key": 123, "value": "new_key"}],
+        output_schema={
+            "status": {
+                "type": "string",
+                "description": "Status of the agent",
+            },
+            "test": {
+                "type": "string",
+                "description": "Test field",
+            },
+        },
+    )
+except Exception as error:
+    print(error)
 
 try:
     e.create_agent(
-        agent_id="demo_agent_2",
+        agent_id="demo-3",
         description="Invoke when user says demo 2 or demo agent 2",
         environment_variables=[{"key": "test", "value": "deed"}],
     )
 except Exception as error:
     print(error)
 
-e.delete_agent("demo_agent_2")
+e.delete_agent("demo-3")
 
+e.create_agent(
+    agent_id="demo-3",
+    description="Invoke when user says demo 2 or demo agent 2",
+    environment_variables=[{"key": "test", "value": "deed"}],
+)
 
 # Test invalid json schema
 try:
@@ -134,6 +153,13 @@ time.sleep(3)
 
 e.delete_message(m.id)
 
+thread = e.get_thread(
+    eezo_id=os.environ["DEMO_EEZO_ID"],
+    thread_id=os.environ["DEMO_THREAD_ID"],
+)
+
+print(thread)
+
 
 def invoke(c: Context, num_executions):
     def invoke_query(i):
@@ -178,9 +204,9 @@ def invoke_demo(c: Context, **kwargs):
     m.add("text", text=f"```{thread_str}```")
     m.notify()
 
-    # results = invoke(c, 2)
-    # m.add("text", text=f"Result from Agent 1: {results}")
-    # m.notify()
+    results = invoke(c, 2)
+    m.add("text", text=f"Result from Agent 1: {results}")
+    m.notify()
     print("Invoke demo-1")
     c.invoke_async("demo-1", query="Async call")
     print("Invoked demo-1")

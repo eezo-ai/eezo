@@ -45,6 +45,8 @@ GET_AGENT_ENDPOINT = SERVER + "/v1/get-agent/"
 DELETE_AGENT_ENDPOINT = SERVER + "/v1/delete-agent/"
 UPDATE_AGENT_ENDPOINT = SERVER + "/v1/update-agent/"
 
+GET_TREAD_ENDPOINT = SERVER + "/v1/get-thread/"
+
 
 class RestartHandler(FileSystemEventHandler):
     def on_modified(self, event):
@@ -355,10 +357,20 @@ class Client:
             )
 
     def _execute_job(self, job_obj):
-        job_id, agent_uid, agent_id, payload, environment_variables = (
+        (
+            job_id,
+            agent_uid,
+            agent_id,
+            eezo_id,
+            thread_id,
+            payload,
+            environment_variables,
+        ) = (
             job_obj["job_id"],
             job_obj["agent_uid"],
             job_obj["agent_id"],
+            job_obj["eezo_id"],
+            job_obj["thread_id"],
             job_obj["job_payload"],
             job_obj["environment_variables"],
         )
@@ -370,8 +382,11 @@ class Client:
             job_id=job_id,
             user_id=self.user_id,
             api_key=self.api_key,
+            agent_id=agent_id,
+            eezo_id=eezo_id,
+            thread_id=thread_id,
             environment_variables=environment_variables,
-            cb_send_message=lambda p: self._emit_safe("direct_message", agent_id, p),
+            cb_rest_api=self._request,
             cb_run=self._run,
         )
 
@@ -702,6 +717,32 @@ class Client:
             return Agent(**agent_dict)
         else:
             return None
+
+    def get_thread(
+        self, eezo_id: str, thread_id: str, nr: int = 5, to_string: bool = False
+    ) -> Any:
+        """Retrieve and return a thread of messages, with a limit on the number of messages.
+
+        Args:
+            eezo_id (str): The Eezo user identifier.
+            thread_id (str): The thread identifier.
+            nr (int): The number of messages to retrieve from the thread. Defaults to 5.
+            to_string (bool): Flag to convert the messages to a string. Defaults to False.
+
+        Returns:
+            Any: The thread of messages.
+        """
+        return self._request(
+            "POST",
+            GET_TREAD_ENDPOINT,
+            {
+                "api_key": self.api_key,
+                "thread_id": thread_id,
+                "eezo_id": eezo_id,
+                "to_string": to_string,
+                "number_of_messages": nr,
+            },
+        )
 
     def create_state(
         self, state_id: str, state: Optional[Dict[str, Any]] = None
