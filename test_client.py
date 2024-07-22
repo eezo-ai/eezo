@@ -161,6 +161,16 @@ thread = e.get_thread(
 print(thread)
 
 
+try:
+    e.create_agent(
+        agent_id="demo-2",
+        description="Invoke when user says demo 2 or demo agent 2",
+        environment_variables=[{"key": "test", "value": "deed"}],
+    )
+except Exception as error:
+    print(error)
+
+
 def invoke(c: Context, num_executions):
     def invoke_query(i):
         return c.invoke("demo-1", query=f"--- {i}")
