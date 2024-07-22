@@ -712,10 +712,15 @@ class Client:
         response = self._request(
             "POST", GET_AGENT_ENDPOINT, {"api_key": self.api_key, "agent_id": agent_id}
         )
-        agent_dict = response["data"]
-        if agent_dict:
-            return Agent(**agent_dict)
-        else:
+        try:
+            agent_dict = response["data"]
+            if agent_dict:
+                return Agent(**agent_dict)
+            else:
+                logging.info(f"Agent not found for id {agent_id}")
+                return None
+        except Exception as e:
+            logging.error(f"Agent not found for id {agent_id}")
             return None
 
     def get_thread(
