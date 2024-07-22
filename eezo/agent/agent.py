@@ -29,6 +29,11 @@ class ModelFactory:
             raise ValueError(f"Unsupported type specified: {field_type}")
 
     @staticmethod
+    def sanitize_name(name: str) -> str:
+        """Sanitize the name of a model field."""
+        return name.replace(" ", "").replace("-", "").replace("_", "")
+
+    @staticmethod
     def create_dynamic_model(
         name: str, properties: Dict[str, Any], required_fields: List[str]
     ) -> Type[BaseModel]:
